@@ -104,7 +104,8 @@ Player 1 against player 2, one on one, on the co-op's two heroes.
 - **Moves:** player 2's move picks read player 2's own hero's bought upgrades, not player 1's.
 - **Checkpoints:** after a game over and Replay, player 2's level experience and per-level stats go back to their
   values at the checkpoint, as the game does for player 1.
-- **HUD:** player 2's health, ammo, rings and experience gauge.
+- **HUD:** player 2's health, ammo, rings and experience gauge. The rings (each player's combo meter) show only while a level plays: after a level
+  they used to stay on through the stats screens, the shops and the menus (fixed in this fork's `coop-1.9.7`).
 - **The P2 Bot:** a stopgap AI for player 2, to be replaced once there are proper controller settings for player 2:
   - it keeps inside a circle around player 1 and the companions;
   - it melees enemies near it (it walks up and swings only beside them), and shoots from inside the circle at

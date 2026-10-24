@@ -6002,7 +6002,7 @@ static void coop_hud_redraw(void)
  * radius (screen units, 25), TT_COOP_RINGY = centre y (398). */
 #define COOP_RING_PX 128
 static uint32_t coop_ring_px[2][COOP_RING_PX * COOP_RING_PX];
-static volatile unsigned coop_ring_ver[2]; static volatile int coop_ring_on[2];
+static volatile unsigned coop_ring_ver[2]; static volatile int coop_ring_on[2]; static volatile uint32_t coop_ring_t;   /* (coop_ring_t: the last frame of play that set them) */
 static float coop_ring_x[2] = { 81.9f, 558.1f }, coop_ring_y = 398.0f, coop_ring_r = 25.0f;
 static uint32_t coop_bgra(uint32_t c) { return (c & 0xFF00FF00u) | ((c >> 16) & 0xFFu) | ((c & 0xFFu) << 16); }   /* the game's AABBGGRR to the overlay's 0xAARRGGBB */
 static void coop_ring_draw(uint32_t *p, float f, uint32_t col, float bright)
@@ -6064,7 +6064,7 @@ static void coop_ring_frame(void)   /* once a frame, game side */
         if (f < 0) f = 0; if (f > 1) f = 1;
         k = (perf ? 100000 + (int)(br * 40) * 1000 : (int)(col & 0xFF) * 1000) + (int)(f * 240);
         if (k != key[i]) { key[i] = k; coop_ring_draw(coop_ring_px[i], f, coop_bgra(col), br); coop_ring_ver[i]++; }
-        coop_ring_on[i] = 1;
+        coop_ring_on[i] = 1; coop_ring_t = coop_now() | 1;
         if (getenv("TT_COOP_RINGLOG")) { static int lp[2] = { -1, -1 }; static uint32_t lt[2]; if ((perf != lp[i] || coop_now() - lt[i] > 1000) && (m > 0 || perf)) { lp[i] = perf; lt[i] = coop_now();
             tt_dbg("[COOPRING] P%d t %u: meter %.2f of %.1f, Perfect %.2f of %.2f -> ring %.2f %s\n", i + 1, coop_now() - coop_p2_t0, m, tp, pm, pmax, f, perf ? "PERFECT" : ""); } }
     }
@@ -6075,7 +6075,7 @@ static int coop_overlay(CoopOvlQuad *q, int max)
     int n = 0, i;
     if (xbox_MoviePlaying()) return 0;
     if (n < max) n += tt_vs_res_overlay(&q[n]);   /* (Versus: the results' panel, under the rest) */
-    for (i = 0; i < 2 && n < max; i++) if (coop_ring_on[i]) {
+    for (i = 0; i < 2 && n < max; i++) if (coop_ring_on[i] && coop_now() - coop_ring_t < 250u) {   /* (only while play runs: after a level they stayed on through the stats, shops and menus, a playtest) */
         /* kept to the left / right edge with the gauges (the version's bits 31 / 30, the renderer's ovl_wide_x); with the
          * E3 HUD round the place of its rune orb (82.5, 404), which is left out in co-op (e3hud.c) */
         extern int xbox_GfxGet(int id); int e3 = xbox_GfxGet(27) != 0;
