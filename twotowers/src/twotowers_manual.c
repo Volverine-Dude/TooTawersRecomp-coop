@@ -3221,7 +3221,7 @@ static int coop_bot_shoot(CoopPad *o, uint32_t p2, uint32_t e, int fire)
     return locked;
 }
 /* the bot's melee (not always the same attack): a combo picked at random (A fast, Y fierce), its presses 0.28-0.4 s
- * apart, then a 0.35-0.95 s pause before the next one. Called every frame it may swing. (X, used before in place of
+ * apart, then a 0.35-0.95 s pause before the next one; at Weathertop fierce (Y) only (TT_COOP_BOTALLATK: all). Called every frame it may swing. (X, used before in place of
  * A, never makes an attack box -- for player 1 either --, so half the bot's presses did nothing; player 1's A made the
  * hits on the Watcher's tentacles.) */
 static void coop_bot_attack(CoopPad *o, uint32_t now)
@@ -3234,7 +3234,8 @@ static void coop_bot_attack(CoopPad *o, uint32_t now)
     if (now < next) return;
     seed = seed * 1103515245u + 12345u;
     if (c && !c[k]) { c = 0; next = now + 350u + (seed >> 16) % 600u; return; }   /* (the combo done: a pause) */
-    if (!c) { c = combos[(seed >> 16) % (sizeof combos / sizeof combos[0])]; k = 0; }
+    if (!c) { extern int coop_on_weathertop; static const char *const fierce[] = { "Y", "YY", "Y", "YYY" };   /* (Weathertop: fierce attacks only, a playtest: "he should only perform heavy attack") */
+        c = coop_on_weathertop && !getenv("TT_COOP_BOTALLATK") ? fierce[(seed >> 16) % 4u] : combos[(seed >> 16) % (sizeof combos / sizeof combos[0])]; k = 0; }
     cur = c[k] == 'A' ? 0 : c[k] == 'X' ? 2 : 3; k++;
     hold = now + 120u; next = now + 280u + (seed >> 8) % 120u; o->analog[cur] = 255;
 }
@@ -4098,10 +4099,10 @@ void sub_000E7DB0(void)
 static struct { uint32_t a, n; } coop_blk[] = {
     { 0x43B114u, 0x48 }, { 0x43B168u, 0x58 }, { 0x43B1C1u, 0x5F }, { 0x43B298u, 0xF8 }, { 0x43B3A4u, 0x10 },
     { 0x1B0C40u, 0x20 }, { 0x1B1078u, 4 }, { 0x1B1080u, 0x24 }, { 0x43B15Cu, 4 }, { 0x43B160u, 4 }, { 0x1CB8B4u, 4 },
-    { 0x43B22Cu, 0x14 },
+    { 0x43B22Cu, 0x14 }, { 0x43B248u, 0x14 },
     { 0x43B240u, 8 }, { 0x43B25Cu, 8 }, { 0x43B3DAu, 1 },
     { 0x43B264u, 0x20 } };
-    /* (0x43B22C..0x43B23F: the player weapon effects, one handle per slot, @StartPlayerWeaponPfx / @StopPlayerWeaponPfx
+    /* (0x43B22C..0x43B23F and 0x43B248..0x43B25B: the player weapon effects, one handle and one attach node per slot, @StartPlayerWeaponPfx / @StopPlayerWeaponPfx
      * (0xB2930 / 0xB29F0 through 0x9BEA0): an effect put on the current player [0x43B15C] -- Weathertop's torch flame is
      * slot 4 (0x43B23C), lit by the level script each time the hero's swing hits the fire. Shared, a light for one player
      * took the other's flame down (starting a slot ends its last effect): bot runs, the slot's script calls ran in either
@@ -4130,7 +4131,7 @@ static uint8_t coop_s1[0x800], coop_s2[0x800];
 uint32_t coop_rec_addr;
 static void coop_blk_opts(void) { static int done; if (!done) { done = 1; if (getenv("TT_COOP_NOCOMBOSWAP")) coop_blk[COOP_NBLK - 1].n = 0;
     if (getenv("TT_COOP_NOPERFSWAP")) coop_blk[COOP_NBLK - 2].n = coop_blk[COOP_NBLK - 3].n = coop_blk[COOP_NBLK - 4].n = 0;
-    if (getenv("TT_COOP_NOPFXSWAP")) coop_blk[COOP_NBLK - 5].n = 0; } }   /* (test: the combo block shared, as before) */
+    if (getenv("TT_COOP_NOPFXSWAP")) coop_blk[COOP_NBLK - 5].n = coop_blk[COOP_NBLK - 6].n = 0; } }   /* (test: the combo block shared, as before) */
 static void coop_save(uint8_t *s) { uint32_t i, j, o = 0; coop_blk_opts(); for (i = 0; i < COOP_NBLK; i++) for (j = 0; j < coop_blk[i].n; j++) s[o++] = MEM8(coop_blk[i].a + j); if (coop_rec_addr) for (j = 0; j < 0x348; j += 4) *(uint32_t *)(s + 0x400 + j) = MEM32(coop_rec_addr + j); }
 static void coop_load(const uint8_t *s) { uint32_t i, j, o = 0; coop_blk_opts(); for (i = 0; i < COOP_NBLK; i++) for (j = 0; j < coop_blk[i].n; j++) MEM8(coop_blk[i].a + j) = s[o++]; if (coop_rec_addr) for (j = 0; j < 0x348; j += 4) MEM32(coop_rec_addr + j) = *(const uint32_t *)(s + 0x400 + j); }
 const uint8_t *coop_p2_state(void) { return coop_s2; }
@@ -4194,7 +4195,7 @@ static void coop_take(uint32_t a)
     MEM8(0x43B190u) = 0; MEM32(0x1B0C40u) = 0x447A0000u; MEM32(0x43B198u) = MEM32(0x43B19Cu) = MEM32(0x43B1A0u) = MEM32(0x43B1A4u) = 0;
     MEM8(0x43B214u) = MEM8(0x43B215u) = MEM8(0x43B216u) = 0; MEM32(0x1B0C5Cu) = 0xFFFFFFFFu;
     MEM32(0x43B240u) = MEM32(0x43B244u) = MEM32(0x43B25Cu) = MEM32(0x43B260u) = 0; MEM8(0x43B3DAu) = 0;   /* no Perfect glow of his own (taken in player 1's Perfect, a copy of his would be taken down) */
-    { uint32_t q; for (q = 0; q < 0x14; q += 4) MEM32(0x43B22Cu + q) = 0; }   /* no weapon effects of his own yet (a copy of player 1's torch flame would be taken down by his first light) */
+    { uint32_t q; for (q = 0; q < 0x14; q += 4) MEM32(0x43B22Cu + q) = MEM32(0x43B248u + q) = 0; }   /* no weapon effects of his own yet (a copy of player 1's torch flame would be taken down by his first light) */
     coop_save(coop_s2);
     if (coop_rec_addr) {   /* player 2's record: his hero's (TT_COOP_P2HERO = hero index; default player 1's hero), the level's running experience from 0 */
         uint32_t src = getenv("TT_COOP_P2HERO") ? 0x4AB598u + (uint32_t)atoi(getenv("TT_COOP_P2HERO")) * 0x348u : coop_rec_addr, j; float z = 0;
@@ -5049,8 +5050,10 @@ static void coop_p2_meter(void)
     }
     prev = hp;
 }
+static void coop_p2_unstick(void);
 static void coop_exp_frame(void)   /* the HUD's copy of player 2's record (his gauge), from his saved state */
 {
+    coop_p2_unstick();
     coop_p2_meter();
     /* bot test: player 1's meter put past Perfect that many ms into play and every 20 s after (the game's own step starts the mode) */
     if (getenv("TT_COOP_TESTPERF1") && coop_p2_t0 && coop_rec_addr && !coop_depth && MEM32(0x43B15Cu) != coop_p2) {
@@ -5190,6 +5193,27 @@ static void coop_hero_state(uint32_t a, uint32_t st)   /* the hero's state machi
     uint32_t sp = esp, r0 = eax, r1 = ecx, r2 = edx;
     PUSH32(esp, st); PUSH32(esp, 0x00053090u); ecx = a + 0x3D8; sub_00053090();
     esp = sp; eax = r0; ecx = r1; edx = r2;
+}
+/* player 2 held in a state waiting for INP_EXPIRED (30) while his animation loops: Weathertop with his own torch lit, his
+ * fierce-attack steps 11, 46 and 49 played a looping animation (INP_LOOPED, 11, every 0.67 s and left pending), the state
+ * took only INP_RUN and INP_EXPIRED (its +0x410 0x42000000) and EXPIRED never came: he stood in a pose until a hit (bot runs,
+ * 12-25 s; a playtest: "p2 freeze ... he stays in a pose until he gets hits unable to move"). Player 1 never entered those
+ * states (11 loops into itself, restarting its time). After 3 s in one of those four, INP_EXPIRED is raised for him (the
+ * end of a one-shot animation), and from the third second on INP_TAKEDAMAGE (a hit always freed him).
+ * TT_COOP_NOP2UNSTICK: as before */
+static void coop_p2_unstick(void)
+{
+    static uint32_t lt, st = ~0u, st_t; static int tries; uint32_t a = coop_p2, s;
+    if (coop_mode() != 3 || a < 0x10000u || coop_hero_down(1) || coop_depth || getenv("TT_COOP_NOP2UNSTICK")) return;
+    s = MEM32(a + 0x408);
+    if (s != st) { st = s; st_t = coop_now(); tries = 0; return; }
+    if ((s == 11u || s == 13u || s == 46u || s == 49u) && coop_now() - st_t > 3000u && coop_now() - lt > 1000u) {
+        uint32_t in = tries < 2 ? 30u : 5u;   /* (INP_EXPIRED twice, then INP_TAKEDAMAGE: a hit always freed him) */
+        lt = coop_now(); tries++;
+        { static int n; if (n++ < 30) tt_dbg("[COOPSTUCK] player 2 %.1f s in state %u (accepts %08X %08X, pending %08X %08X): input %u raised\n",
+            (coop_now() - st_t) / 1000.0f, s, MEM32(a + 0x414), MEM32(a + 0x410), MEM32(a + 0x3E4), MEM32(a + 0x3E0), in); }
+        coop_hero_state(a, in);
+    }
 }
 int coop_hero_down(int who) { return coop_down[who]; }
 uint32_t coop_p1_actor(void) { return coop_mode() == 3 ? coop_first_char : 0; }
