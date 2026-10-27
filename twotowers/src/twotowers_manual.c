@@ -4771,7 +4771,9 @@ static void coop_place(void)
         extern int tt_coop_setting(int i);
         if (a >= 0x10000u && p1 >= 0x10000u && coop_place_frames <= 0 && !coop_hero_down(0) && !coop_hero_down(1) && !getenv("TT_COOP_NOCATCHUP") && tt_coop_setting(3)) {   /* (the Co-op menu's P2 Teleport) */
             float dx = MEMF(p1 + 0xF0) - MEMF(a + 0xF0), dy = MEMF(p1 + 0xF4) - MEMF(a + 0xF4), R = coop_leash_radius() * 1.5f;
-            if (dx * dx + dy * dy > R * R) {
+            if (getenv("TT_COOP_TESTDROP")) { static int dropped; if (!dropped && coop_p2_t0 && coop_now() - coop_p2_t0 > (uint32_t)atoi(getenv("TT_COOP_TESTDROP"))) {   /* (bot test) player 2 put off Weathertop's summit, where one fell in a bot run */
+                uint32_t q; dropped = 1; MEMF(a + 0xF0) = -70.0f; MEMF(a + 0xF4) = -7.0f; for (q = 0; q < 3; q++) MEM32(a + 0x90 + 4 * q) = MEM32(a + 0x130 + 4 * q) = MEM32(a + 0x140 + 4 * q) = MEM32(a + 0xF0 + 4 * q); tt_dbg("[COOP2] test: player 2 dropped to %.1f\n", MEMF(a + 0xF8)); } }
+            if (dx * dx + dy * dy > R * R || MEMF(a + 0xF8) < MEMF(p1 + 0xF8) - 15.0f) {   /* (or 15 units under him: fallen off, a bot run at Weathertop) */
                 if (!far_t) far_t = coop_now() | 1;
                 else if (coop_now() - far_t > 500u) { far_t = 0; coop_place_frames = 3; tt_dbg("[COOP2] catch-up: player 2 %.1f units from player 1, put beside him\n", sqrtf(dx * dx + dy * dy)); }
             } else far_t = 0;
@@ -4783,7 +4785,9 @@ static void coop_place(void)
     tt_dbg("[COOP2] place: writing %.2f %.2f %.2f (was %.2f %.2f)\n", place_x, place_y, MEMF(p1 + 0xF8), MEMF(a + 0xF0), MEMF(a + 0xF4));
     MEMF(a + 0xF0) = place_x; MEMF(a + 0xF4) = place_y; MEMF(a + 0xF8) = MEMF(p1 + 0xF8);
     if (coop_place_frames <= 0) place_have = 0;
-    for (k = 0; k < 3; k++) MEM32(a + 0x90 + 4 * k) = MEM32(a + 0xF0 + 4 * k);
+    for (k = 0; k < 3; k++) MEM32(a + 0x90 + 4 * k) = MEM32(a + 0x130 + 4 * k) = MEM32(a + 0x140 + 4 * k) = MEM32(a + 0xF0 + 4 * k);   /* (+0x130 / +0x140: the
+     * places a move or a fall starts from -- with only +0xF0 written, player 2 falling under Weathertop's summit was put back
+     * beside player 1 again and again and the next frame read his fall again: 35 s below the level, a bot run) */
 }static void coop_gate_log(int who)
 {
     static uint32_t last[3];
