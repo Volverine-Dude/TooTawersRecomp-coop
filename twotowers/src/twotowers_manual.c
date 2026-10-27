@@ -4040,7 +4040,13 @@ void sub_000E7DB0(void)
 static struct { uint32_t a, n; } coop_blk[] = {
     { 0x43B114u, 0x48 }, { 0x43B168u, 0x58 }, { 0x43B1C1u, 0x5F }, { 0x43B298u, 0xF8 }, { 0x43B3A4u, 0x10 },
     { 0x1B0C40u, 0x20 }, { 0x1B1078u, 4 }, { 0x1B1080u, 0x24 }, { 0x43B15Cu, 4 }, { 0x43B160u, 4 }, { 0x1CB8B4u, 4 },
+    { 0x43B240u, 8 }, { 0x43B25Cu, 8 }, { 0x43B3DAu, 1 },
     { 0x43B264u, 0x20 } };
+    /* (0x43B240, 0x43B244, 0x43B25C, 0x43B260, 0x43B3DA: Perfect mode's blue glow on the hero and his sword, kept by 0x9BFD0 from the
+     * control step, set up while the Perfect flag [0x43B191] is on and taken down when it is off. Shared, player 2's control step (his
+     * flag off) took player 1's glow down every frame and player 1's put it up again: it never showed (bot runs: blue in solo and
+     * with no take-over, none in co-op; player 2's flag forced on, the glow went to him). Player 2's start at 0 (coop_take).
+     * TT_COOP_NOPERFSWAP: shared, as before) */
     /* (0x43B264..0x43B283: the combo block -- presses counted since the last attack and their timers, read by the combo
      * matcher 0x9A1F0 from the control step, which raises INP_COMBO1-5 (24, 39, 54, 56, 60) on [0x43B15C]. Shared, both
      * players' presses went into one count: an idle player 2 had 16 combo inputs raised on him from player 1's presses
@@ -4058,7 +4064,8 @@ static uint8_t coop_s1[0x800], coop_s2[0x800];
 /* + the current hero's record (0x4AB598 + hero*0x348: upgrades, experience, the level's running experience and combat
  * rating), at +0x400 of each state: whatever runs in player 2's context uses his own copy (set at the take-over) */
 uint32_t coop_rec_addr;
-static void coop_blk_opts(void) { static int done; if (!done) { done = 1; if (getenv("TT_COOP_NOCOMBOSWAP")) coop_blk[COOP_NBLK - 1].n = 0; } }   /* (test: the combo block shared, as before) */
+static void coop_blk_opts(void) { static int done; if (!done) { done = 1; if (getenv("TT_COOP_NOCOMBOSWAP")) coop_blk[COOP_NBLK - 1].n = 0;
+    if (getenv("TT_COOP_NOPERFSWAP")) coop_blk[COOP_NBLK - 2].n = coop_blk[COOP_NBLK - 3].n = coop_blk[COOP_NBLK - 4].n = 0; } }   /* (test: the combo block shared, as before) */
 static void coop_save(uint8_t *s) { uint32_t i, j, o = 0; coop_blk_opts(); for (i = 0; i < COOP_NBLK; i++) for (j = 0; j < coop_blk[i].n; j++) s[o++] = MEM8(coop_blk[i].a + j); if (coop_rec_addr) for (j = 0; j < 0x348; j += 4) *(uint32_t *)(s + 0x400 + j) = MEM32(coop_rec_addr + j); }
 static void coop_load(const uint8_t *s) { uint32_t i, j, o = 0; coop_blk_opts(); for (i = 0; i < COOP_NBLK; i++) for (j = 0; j < coop_blk[i].n; j++) MEM8(coop_blk[i].a + j) = s[o++]; if (coop_rec_addr) for (j = 0; j < 0x348; j += 4) MEM32(coop_rec_addr + j) = *(const uint32_t *)(s + 0x400 + j); }
 const uint8_t *coop_p2_state(void) { return coop_s2; }
@@ -4112,6 +4119,7 @@ static void coop_take(uint32_t a)
     for (k = 0; k < 15; k++) { uint32_t e = 0x43B298u + 0x10 * k, j; for (j = 0; j < 4; j++) MEM32(e + 4 * j) = MEM32(a + 0xF0 + 4 * j); MEM32(0x43B114u + 4 * k) = 0x3F800000u; }
     MEM8(0x43B190u) = 0; MEM32(0x1B0C40u) = 0x447A0000u; MEM32(0x43B198u) = MEM32(0x43B19Cu) = MEM32(0x43B1A0u) = MEM32(0x43B1A4u) = 0;
     MEM8(0x43B214u) = MEM8(0x43B215u) = MEM8(0x43B216u) = 0; MEM32(0x1B0C5Cu) = 0xFFFFFFFFu;
+    MEM32(0x43B240u) = MEM32(0x43B244u) = MEM32(0x43B25Cu) = MEM32(0x43B260u) = 0; MEM8(0x43B3DAu) = 0;   /* no Perfect glow of his own (taken in player 1's Perfect, a copy of his would be taken down) */
     coop_save(coop_s2);
     if (coop_rec_addr) {   /* player 2's record: his hero's (TT_COOP_P2HERO = hero index; default player 1's hero), the level's running experience from 0 */
         uint32_t src = getenv("TT_COOP_P2HERO") ? 0x4AB598u + (uint32_t)atoi(getenv("TT_COOP_P2HERO")) * 0x348u : coop_rec_addr, j; float z = 0;
@@ -4969,6 +4977,12 @@ static void coop_p2_meter(void)
 static void coop_exp_frame(void)   /* the HUD's copy of player 2's record (his gauge), from his saved state */
 {
     coop_p2_meter();
+    /* bot test: player 1's meter put past Perfect that many ms into play and every 20 s after (the game's own step starts the mode) */
+    if (getenv("TT_COOP_TESTPERF1") && coop_p2_t0 && coop_rec_addr && !coop_depth && MEM32(0x43B15Cu) != coop_p2) {
+        static uint32_t next;
+        if (!next) next = coop_p2_t0 + (uint32_t)atoi(getenv("TT_COOP_TESTPERF1"));
+        if (coop_now() >= next) { next = coop_now() + 20000u; MEMF(coop_rec_addr + 4) = MEMF(0x175324u) + 0.5f;
+            tt_dbg("[COOPEXP] test: player 1's meter set to %.1f (glow %08X; player 2's %08X)\n", MEMF(coop_rec_addr + 4), MEM32(0x43B25Cu), *(const uint32_t *)(coop_s2 + 0x48 + 0x58 + 0x5F + 0xF8 + 0x10 + 0x20 + 4 + 0x24 + 4 + 4 + 4 + 8)); } }
     extern uint32_t coop_rec_addr; extern const uint8_t *coop_p2_state(void); uint32_t j; const uint8_t *s;
     if (!coop_rec_addr || coop_mode() != 3 || coop_p2 < 0x10000u) { coop_p2rec_ok = 0; return; }
     if (!coop_p2rec_ok) { uint32_t nz = 0; for (j = 0; j < 0x348; j += 4) if (MEM32(COOP_P2REC + j)) nz++; if (nz) { static int said; if (!said++) tt_dbg("[COOPEXP] HUD copy area %08X not zero: no gauge for player 2\n", COOP_P2REC); return; } }
