@@ -3505,24 +3505,29 @@ static void coop_bot_pick_melee_old(BotView *v)
  * Unlit (his flame, weapon effect slot 4, empty: coop_p2_pfx): to the fire (the level's 'propObj' at its middle), 4 units
  * from it on his side, swinging from within 6.8 (its stones stop a hero 4.5 to 6.3 out; player 1's swings from 6.1 lit his),
  * facing it, a fierce attack (Y) 0.3 s of each 1.2 s, until
- * the level script lights it (relightTorchExpander, on any hero's swing that hits the fire). 20 s of that with no light:
- * left for 20 s. TT_COOP_BOTNOTORCH: off. 1 = the frame is his */
+ * the level script lights it (relightTorchExpander, on any hero's swing that hits the fire). Out of the swing range and
+ * under 0.3 units nearer in 1.5 s (held up at 6.9 by something on that side for 20 s, a bot run): his way in turned 50
+ * degrees round the fire. 20 s of that with no light: left for 20 s. TT_COOP_BOTNOTORCH: off. 1 = the frame is his */
 int coop_on_weathertop;
 static int coop_bot_torch(BotView *v, CoopPad *o)
 {
     extern uint32_t coop_wobjs[]; extern int coop_nwobjs; extern uint32_t coop_p2_pfx(int k);
-    static uint32_t t0, rest_until, tlog; static int was;
-    uint32_t fire = 0, cm; float fx = 0, fy = 0, dx, dy, dn, d; int i;
+    static uint32_t t0, rest_until, tlog, chk_t; static int was; static float chk_d, turn;
+    uint32_t fire = 0, cm; float fx = 0, fy = 0, dx, dy, dn, d, gx, gy; int i;
     if (!coop_on_weathertop || getenv("TT_COOP_BOTNOTORCH")) return 0;
     if (coop_p2_pfx(4)) { if (was) { was = 0; tt_dbg("[P2BOT] torch lit (%.1f s at it): back to the fight\n", (v->now - t0) / 1000.0f); } return 0; }
     if ((int32_t)(rest_until - v->now) > 0) return 0;
     for (i = 0; i < coop_nwobjs; i++) if (MEM32(coop_wobjs[i] + 0x114) == 7 && !strcmp(coop_nm(coop_wobjs[i]), "propObj")) { fire = coop_wobjs[i]; break; }
     if (fire) { fx = MEMF(fire + 0xF0); fy = MEMF(fire + 0xF4); }
-    if (!was) { was = 1; t0 = v->now; tt_dbg("[P2BOT] torch out: to the fire (%.1f %.1f, %.1f away)\n", fx, fy, sqrtf((v->bx - fx) * (v->bx - fx) + (v->by - fy) * (v->by - fy))); }
+    if (!was) { was = 1; t0 = chk_t = v->now; chk_d = 1e9f; turn = 0; tt_dbg("[P2BOT] torch out: to the fire (%.1f %.1f, %.1f away)\n", fx, fy, sqrtf((v->bx - fx) * (v->bx - fx) + (v->by - fy) * (v->by - fy))); }
     else if (v->now - t0 > 20000u) { was = 0; rest_until = v->now + 20000u; tt_dbg("[P2BOT] torch: no light in 20 s at the fire, left for 20 s\n"); return 0; }
     dx = v->bx - fx; dy = v->by - fy; dn = sqrtf(dx * dx + dy * dy);
     if (dn < 1e-3f) { dx = 1.0f; dy = 0; dn = 1.0f; }
-    d = coop_bot_go(&s_bk, o, v->p2, fx + dx / dn * 4.0f, fy + dy / dn * 4.0f, 0.6f);
+    if (dn >= 6.8f && v->now - chk_t >= 1500u) {   /* held up short of it: another way in */
+        if (dn > chk_d - 0.3f) { turn += 0.87f; tt_dbg("[P2BOT] torch: held up %.1f from the fire, going round it\n", dn); }
+        chk_t = v->now; chk_d = dn; }
+    gx = (dx * cosf(turn) - dy * sinf(turn)) / dn; gy = (dx * sinf(turn) + dy * cosf(turn)) / dn;
+    d = coop_bot_go(&s_bk, o, v->p2, fx + gx * 4.0f, fy + gy * 4.0f, 0.6f);
     v->mode = 2; s_bot_following = 0;
     if (d <= 0.6f || dn < 6.8f) {   /* at the fire: facing it (the stick a little its way, camera-relative), a fierce attack */
         cm = MEM32(0x43B164u);
@@ -8637,7 +8642,25 @@ extern void sub_000A0DB0_gen(void); void sub_000A0DB0(void) { coop_replay(0x000A
 extern void sub_000A5CE0_gen(void); void sub_000A5CE0(void) { coop_replay(0x000A5CE0u, "ObjectCollisionOn", sub_000A5CE0_gen); }
 extern void sub_000B1EF0_gen(void); void sub_000B1EF0(void) { coop_replay(0x000B1EF0u, "SetAlpha", sub_000B1EF0_gen); }
 extern void sub_000A7580_gen(void); void sub_000A7580(void) { coop_replay(0x000A7580u, "OnComboBreak", sub_000A7580_gen); }
-extern void sub_000B2930_gen(void); void sub_000B2930(void) { coop_replay(0x000B2930u, "StartPlayerWeaponPfx", sub_000B2930_gen); }
+/* @StartPlayerWeaponPfx (0xB2930): the effect goes on the current player (0x9BEA0, [0x43B15C]). Weathertop's fire raises
+ * the relight from the hit, but the light itself runs from the script outside the hit's handler, in player 1's context: player 2's
+ * hits lit player 1's torch (a playtest: "each time p2 hit the fire, it lits p1 torch not p2"; a bot run, 20 lights after
+ * his hits, all in player 1's context). A light within 1.5 s of a hero's hit on a prop goes to the one who hit it last
+ * (coop_prop_hit_by): player 2's in his context. TT_COOP_NOP2PFXOWNER: as before */
+extern void sub_000B2930_gen(void);
+void sub_000B2930(void)
+{
+    extern uint32_t coop_prop_hit_by, coop_prop_hit_t; int sw = 0;
+    if (coop_mode() == 3 && coop_p2 >= 0x10000u && coop_prop_hit_by == coop_p2 && coop_now() - coop_prop_hit_t < 1500u
+        && !coop_depth && MEM32(0x43B15Cu) != coop_p2 && !tt_vs_on() && !getenv("TT_COOP_NOP2PFXOWNER")) {
+        extern int tt_coop_enter_ctx(void); sw = tt_coop_enter_ctx();
+        { static unsigned n; if (sw && n++ < 6) tt_dbg("[COOPPFX] a weapon effect %u ms after player 2's hit on a prop: on him\n", coop_now() - coop_prop_hit_t); }
+    }
+    {   int ev = coop_twin_ev; if (sw) coop_twin_ev = 1;   /* (its lookup of 'aragornHeroObj' answers him, as in his own events: it acts only on the current player) */
+        coop_replay(0x000B2930u, "StartPlayerWeaponPfx", sub_000B2930_gen);
+        coop_twin_ev = ev; }
+    if (sw) { extern void tt_coop_leave(void); tt_coop_leave(); }
+}
 extern void sub_000A1840_gen(void); void sub_000A1840(void) { coop_replay(0x000A1840u, "SetBrainMachine", sub_000A1840_gen); }
 extern void sub_000A7760_gen(void); void sub_000A7760(void) { coop_replay(0x000A7760u, "PlayerLargeMass", sub_000A7760_gen); }
 extern void sub_000A59B0_gen(void); void sub_000A59B0(void) { coop_replay(0x000A59B0u, "UnlockHeading", sub_000A59B0_gen); }
@@ -9825,9 +9848,12 @@ extern void sub_00091200_gen(void); void sub_00091200(void) { int sw = tt_coop_e
  * his copy) given as player 1's own: in his context alone there was still no light (a bot run); with both, the script lit
  * his torch (relightTorchExpander in his context, his flame slot set). TT_COOP_NOP2PROPCTX / TT_COOP_NOP2PROPWPN: as before */
 extern void sub_00091AC0_gen(void);
+uint32_t coop_prop_hit_by, coop_prop_hit_t;   /* the hero whose hit on a prop came last, and when (sub_000B2930) */
 void sub_00091AC0(void)
 {
     uint32_t r = MEM32(esp + 8); int sw = tt_coop_enter_weapon2(ecx, 0x00091AC0u), sw2 = 0;
+    if ((MEM32(esp + 4) & 0xFFFFu) == 3u && coop_mode() == 3 && r >= 0x10000u && r < 0x84000000u && MEM32(r + 0x1C) >= 0x10000u
+        && (MEM32(r + 0x1C) == coop_p2 || MEM32(r + 0x1C) == coop_first_char)) { coop_prop_hit_by = MEM32(r + 0x1C); coop_prop_hit_t = coop_now(); }
     if (!sw && (MEM32(esp + 4) & 0xFFFFu) == 3u && coop_mode() == 3 && coop_p2 >= 0x10000u && r >= 0x10000u && r < 0x84000000u && MEM32(r + 0x1C) == coop_p2
         && MEM32(0x43B15Cu) != coop_p2 && !tt_vs_on() && !getenv("TT_COOP_NOP2PROPCTX")) {
         sw2 = tt_coop_enter_ctx();
