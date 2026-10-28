@@ -1747,12 +1747,24 @@ void sub_000D3C00(void)
     tt_hk(3, 1, r);
     eax = r[0];
 }
+/* bot test: TT_COOP_TESTUPG's upgrades also kept bought from the start, each time a hero is asked (the level's set-up reads
+ * some, before play: the bow upgrades' weapon effects) */
+static void coop_testupg_early(void)
+{
+    static int got; static const char *v; const char *p;
+    if (!got) { got = 1; v = getenv("TT_COOP_TESTUPG"); }
+    p = v;
+    while (p && *p) { int h = atoi(p), u; const char *c = strchr(p, ':'); if (!c) break; u = atoi(c + 1);
+        if (h >= 1 && h <= 4 && u >= 0 && u < 0x50) MEM8(0x4AC5B0u + (uint32_t)h * 0x50u + (uint32_t)u) = 1;
+        p = strchr(c, ','); if (p) p++; }
+}
 /* hero getter (1..4) */
 extern void sub_000D2310_gen(void);
 int coop_moves_hero_swap(uint32_t ret, uint8_t *keep);
 void sub_000D2310(void)
 {
     uint32_t r[4] = { eax, ecx, edx, esp }; uint8_t keep = 0; int sw = coop_moves_hero_swap(MEM32(esp), &keep);
+    coop_testupg_early();
     if (!tt_hk(4, 0, r)) sub_000D2310_gen(); else { eax = r[0]; esp = r[3]; }
     r[0] = eax; r[1] = ecx; r[2] = edx; r[3] = esp;
     tt_hk(4, 1, r);
@@ -2749,10 +2761,12 @@ extern void sub_0009CAB0_gen(void);
 void sub_0009CAB0(void)
 {
     static int on = -1; static uint32_t seen[128]; static int ns; uint32_t blk = ecx, it = MEM32(esp + 4), ret = MEM32(esp);
-    if (on < 0) on = getenv("TT_COOP_MOVELOG") != 0;
+    if (on < 0) on = getenv("TT_COOP_BOWLOG") ? 2 : getenv("TT_COOP_MOVELOG") != 0;   /* (TT_COOP_BOWLOG: every kind of ask, below, and MOVELOG's) */
     sub_0009CAB0_gen();
     if (tt_vs_on() && blk >= 0x4AC5B0u && blk < 0x4AC800u && !getenv("TT_VS_OWNUPGRADES")) eax = (eax & ~0xFFu) | 1u;
     if (getenv("TT_COOP_TESTALLMOVES") && blk >= 0x4AC5B0u && blk < 0x4AC800u) eax = (eax & ~0xFFu) | 1u;   /* (test) every move bought, both heroes */   /* (Versus: fixed loadouts -- every hero with every move bought) */
+    if (on > 1 && blk >= 0x4AC5B0u && blk < 0x4AC800u) { static int nb; static uint32_t sk[400]; static int nsk; uint32_t r2 = MEM32(esp + 0x2C), k2 = ret << 12 ^ (it & 0xFF) << 4 ^ (uint32_t)coop_depth << 1 ^ (eax & 1u), q2; for (q2 = 0; q2 < (uint32_t)nsk && sk[q2] != k2; q2++) ; if (q2 < (uint32_t)nsk || nsk >= 400) nb = 1000; else { sk[nsk++] = k2; nb = 0; }   /* (research) each kind of upgrade ask (caller, upgrade, context, answer), once */
+        if (nb++ < 300) tt_dbg("[BOWUPG] t %lu hero %u upgrade %u = %u (from %06X, %06X) in %s context, player %08X\n", GetTickCount(), (blk - 0x4AC5B0u) / 0x50u, it & 0xFF, eax & 0xFF, ret, r2, coop_depth ? "player 2's" : "player 1's", MEM32(0x43B15Cu)); }
     if (on && coop_depth && blk >= 0x4AC5B0u && blk < 0x4AC800u && ns < 128) {
         uint32_t key = ((blk - 0x4AC5B0u) / 0x50u) << 16 | (it & 0xFF) << 8 | (eax & 0xFF); int i;
         for (i = 0; i < ns && seen[i] != key; i++) ;
@@ -2764,7 +2778,11 @@ int coop_moves_hero_swap(uint32_t ret, uint8_t *keep)
     static int off = -1; static unsigned n; extern int tt_heroes_retail_byte(const char *skin); extern const char *tt_coop_p2_char_now; int b;
     if (!coop_depth) return 0;
     if (!((ret >= 0x99A90u && ret < 0x99AABu) || (ret >= 0x9A1F0u && ret < 0x9A594u) || (ret >= 0x9AA90u && ret < 0x9B170u) ||
-          (ret >= 0x9B4D0u && ret < 0x9BE96u) || (ret >= 0x9BFD0u && ret < 0x9C37Eu))) return 0;
+          (ret >= 0x9B4D0u && ret < 0x9BE96u) || (ret >= 0x9BFD0u && ret < 0x9C37Eu) ||
+          (ret >= 0xCCA50u && ret < 0xCCAF8u && !getenv("TT_COOP_NOP2HPUPG")))) return 0;   /* (1.9.9) 0xCCA50: how many health upgrades (0x15-0x1A) the hero
+                                                                                       * has, for his most health (0x82670: +0x300 + 200 each) and the HUD's sword. In
+                                                                                       * player 2's context it counted player 1's hero's: a bot run, Legolas with three
+                                                                                       * had 1200 of 1200 (800 x 1.5), none of them */
     if (off < 0) off = getenv("TT_COOP_NOP2MOVES") != 0;
     b = tt_heroes_retail_byte(tt_coop_p2_char_now);
     if (off || b < 1 || b > 4 || b == MEM8(0x4AB69Du)) return 0;
@@ -2894,6 +2912,17 @@ static uint32_t coop_world, coop_rec, coop_key, coop_last_char, coop_hero_sel, c
  * +0x306 from it. The level script's @SetEnemyID (repeated on the twin) and player 1's database record gave him player
  * 1's (Legolas 7: 60 arrows): player 2 had player 1's ammo -- the "doubled and shared" ammo seen in play. Measured (TT_COOP_NEARLOG):
  * Aragorn 0 (30), Legolas 7 (60), Gimli 8 (25). Isildur and the extra heroes: unchanged. TT_COOP_NOP2TYPE: off. */
+/* (1.9.9) a player's health upgrades' extra most health, as 0x82670 (+0x300 + 200 for each) counts them (0xCCA50: the highest of
+ * upgrades 0x15-0x1A bought, 1-6) from his own hero's block: player 1's hero [0x4AB69D], player 2's his character's (a guest
+ * player 2: player 1's hero's, as 0xCCA50 in his context) */
+int coop_hp_upg_extra(int w)
+{
+    extern const char *tt_coop_p2_char_now; extern int tt_heroes_retail_byte(const char *skin); int h = MEM8(0x4AB69Du), k;
+    if (w) { int b = tt_heroes_retail_byte(tt_coop_p2_char_now); if (b >= 1 && b <= 4 && !getenv("TT_COOP_NOP2HPUPG")) h = b; }
+    if (h < 1 || h > 4) return 0;
+    for (k = 0x1A; k >= 0x15; k--) if (MEM8(0x4AC5B0u + (uint32_t)h * 0x50u + (uint32_t)k)) return (k - 0x14) * 200;
+    return 0;
+}
 static void coop_p2_own_type(const char *when)
 {
     extern const char *tt_coop_p2_char_now; extern uint32_t tt_gcall(uint32_t va, uint32_t thisptr, int n, const uint32_t *args);
@@ -2903,6 +2932,8 @@ static void coop_p2_own_type(const char *when)
     if (ty < 0 || MEM32(coop_twin + 0x2F0) == (uint32_t)ty) return;
     was = MEM32(coop_twin + 0x2F0); a1 = (uint32_t)ty;
     tt_gcall(0x0008C850u, coop_twin, 1, &a1);
+    if (!getenv("TT_COOP_NOP2FULLHP")) MEM32(coop_twin + 0x2FC) = MEM32(coop_twin + 0x300) + (uint32_t)coop_hp_upg_extra(1);   /* (1.9.9) and full: with his health
+        * upgrades, as player 1 starts a level (0x8C850 gives the max without them: a bot run, player 2 started at 1200 of 1400) */
     tt_dbg("[COOP2] twin's type %u -> %d (%s, %s): health %d, ammo %d/%d\n", was, ty, w, when, (int32_t)MEM32(coop_twin + 0x2FC), (int16_t)MEM16(coop_twin + 0x304), (int16_t)MEM16(coop_twin + 0x306));
 }
 /* player 2's weapons' id (+0x2F4, set by @SetWeaponID; 0x0006DD70(id) gives the weapon's data: +0x44/+0x48 its blade's
@@ -5372,7 +5403,11 @@ static void coop_diff_health(void)
         coop_hpmax_set[w] = nm;
         if (nm == m) continue;
         MEM32(a + 0x300) = (uint32_t)nm;
-        if (h > 1) MEM32(a + 0x2FC) = (uint32_t)((int64_t)h * nm / m);
+        {   /* (1.9.9) the health scaled against the most with the health upgrades (0x82670: +0x300 + 200 each, not scaled): player 1
+             * started at (1000 + 600) x 1.5 = 2400 with 2100 the most (a bot run). TT_COOP_OLDHPSCALE: against +0x300, as before */
+            int64_t u = getenv("TT_COOP_OLDHPSCALE") ? 0 : coop_hp_upg_extra(w);
+            if (h > 1) MEM32(a + 0x2FC) = (uint32_t)((int64_t)h * (nm + u) / (m + u));
+        }
         tt_dbg("[COOPLEVEL] P%d max health %d -> %d (x%.2f), health %d -> %d\n", w + 1, m, nm, f, h, (int32_t)MEM32(a + 0x2FC));
     }
 }
@@ -7020,11 +7055,11 @@ void tt_coop_hud_pre(void)
     int k, mir, dn; uint32_t a = COOP_P1SWORD, A = 659; const int32_t DY = 0;
     if (getenv("TT_COOP_SWORDLOG")) { static uint32_t lt; if (coop_now() - lt > 400u) { int q; lt = coop_now();   /* (research) player 1's sword's elements */
         tt_dbg("[SWORD] t %u P1 hp %d/%d |", coop_now(), (int32_t)MEM32(coop_first_char + 0x2FC), (int32_t)MEM32(coop_first_char + 0x300));
-        for (q = 0; q < 16; q++) tt_dbg(" %d:%d,%d,%dx%d,%08X", q, MEM8(a + q * 0xDC + 0x24), (int32_t)MEM32(a + q * 0xDC + 8), (int32_t)MEM32(a + q * 0xDC + 0x10), (int32_t)MEM32(a + q * 0xDC + 0x14), MEM32(a + q * 0xDC + 0x20));
+        for (q = 0; q < 23; q++) tt_dbg(" %d:%d,%d,%dx%d,%08X", q, MEM8(a + q * 0xDC + 0x24), (int32_t)MEM32(a + q * 0xDC + 8), (int32_t)MEM32(a + q * 0xDC + 0x10), (int32_t)MEM32(a + q * 0xDC + 0x14), MEM32(a + q * 0xDC + 0x20));
         tt_dbg("\n"); } }
     if (getenv("TT_COOP_SWORDLOG")) { static uint32_t lt; if (coop_now() - lt > 400u) { int q; lt = coop_now();   /* (research) player 1's sword's elements */
         tt_dbg("[SWORD] t %u P1 hp %d/%d +2F8 %d +300 %d +304 %d +308 %d |", coop_now(), (int32_t)MEM32(coop_first_char + 0x2FC), (int32_t)MEM32(coop_first_char + 0x300), (int32_t)MEM32(coop_first_char + 0x2F8), (int32_t)MEM32(coop_first_char + 0x300), (int32_t)(int16_t)MEM16(coop_first_char + 0x304), (int32_t)MEM32(coop_first_char + 0x308));
-        for (q = 0; q < 16; q++) tt_dbg(" %d:%d,%d,%dx%d,%08X", q, MEM8(a + q * 0xDC + 0x24), (int32_t)MEM32(a + q * 0xDC + 8), (int32_t)MEM32(a + q * 0xDC + 0x10), (int32_t)MEM32(a + q * 0xDC + 0x14), MEM32(a + q * 0xDC + 0x20));
+        for (q = 0; q < 23; q++) tt_dbg(" %d:%d,%d,%dx%d,%08X", q, MEM8(a + q * 0xDC + 0x24), (int32_t)MEM32(a + q * 0xDC + 8), (int32_t)MEM32(a + q * 0xDC + 0x10), (int32_t)MEM32(a + q * 0xDC + 0x14), MEM32(a + q * 0xDC + 0x20));
         tt_dbg("\n"); } }   /* mirror axis: player 1's art 23..279 → 382..638, the top right, level with player 1's; all in the right half (the widescreen HUD groups pieces within 10 units and only pins a group to an edge if it stays in one half) */
     int32_t hp, mx; float f;
     coop_sw_slot = -1;
@@ -7067,6 +7102,19 @@ void tt_coop_hud_pre(void)
         if (mir) MEM32(e + 8) = (uint32_t)(x0 + full - wf);
         MEM32(e + 0x10) = (uint32_t)wf; MEM8(e + 0x24) = wf > 0;
         if (dn) MEM32(COOP_EL + 3 * 0xDC + 0x20) = 0xFF909090u;   /* the art greyed while he is down */
+    }
+    {   /* (1.9.9) his red bar and fill from his own run of the HUD's health update (sub_000CCF30), placed mirrored: their
+         * lengths, his health upgrades' longer bar, the fill's colour by his health, as player 1's. A playtest: "theres still
+         * a red gauge on it" -- the red above was always full length, so his lost health showed red where player 1's is
+         * dark. TT_COOP_OLDBAR: as before */
+        extern int coop_p2_sword_ok; extern uint32_t coop_p2_sword_el(int k, uint32_t off);
+        if (coop_p2_sword_ok && !getenv("TT_COOP_OLDBAR")) for (k = 1; k <= 2; k++) {
+            uint32_t e = COOP_EL + (uint32_t)k * 0xDC, o; int32_t x, w;
+            for (o = 0; o < 0xDC; o += 4) MEM32(e + o) = coop_p2_sword_el(k == 1 ? 7 : 8, o);
+            x = (int32_t)MEM32(e + 8); w = (int32_t)MEM32(e + 0x10);
+            MEM32(e + 8) = (uint32_t)(mir ? (int32_t)A - x - w : x + (int32_t)A - 23 - 279 + 23); MEM32(e + 0xC) = (uint32_t)((int32_t)MEM32(e + 0xC) + DY);
+            if (dn || f <= 0.0f) MEM8(e + 0x24) = 0;
+        }
     }
     {   /* the respawn counter, font 0 (centres its text in the box) */
         uint32_t e = COOP_EL + 4 * 0xDC; extern uint32_t coop_down_time(void);
@@ -7235,8 +7283,8 @@ void tt_coop_hud_pre(void)
             if (getenv("TT_COOP_BOSSBARLOG")) { static uint32_t lt; if (coop_now() - lt > 2000u) { lt = coop_now(); tt_dbg("[BOSSBAR] list %d drawn %d lower; the game's y:", li, dy); for (j = 0; j < 7; j++) tt_dbg(" %d", (int32_t)MEM32(tb + j * 0xDC + 0xC)); tt_dbg("\n"); } } } }
     if (mir && !getenv("TT_COOP_NOTEETH")) {   /* (1.9.7) the silver strip under the blade (player 1's sword's elements 1-6, the
                                                  * teeth, and 9), mirrored as the sword's art, through a slot of its own */
-        extern uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment); static const int src[13] = { 1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 15 }; int j, n = 0;
-        if (!coop_teeth_el) coop_teeth_el = xbox_ContiguousAlloc(14u * 0xDCu, 16u);
+        extern uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment); static const int src[19] = { 1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 22 };   /* ((1.9.9) and 17-22, with 1-6 and 10-15 the health upgrades' pieces) */ int j, n = 0;
+        if (!coop_teeth_el) coop_teeth_el = xbox_ContiguousAlloc(20u * 0xDCu, 16u);
         extern int coop_p2_sword_ok; static uint32_t own; uint32_t sa = a;
         if (coop_p2_sword_ok) {   /* (1.9.8) his own strip: the sword's elements from his run of the HUD's health update (sub_000CCF30) */
             extern uint32_t coop_p2_sword_el(int k, uint32_t off); uint32_t o;
@@ -7244,7 +7292,7 @@ void tt_coop_hud_pre(void)
             if (own) { for (o = 0; o < 27u * 0xDCu; o += 4) MEM32(own + o) = coop_p2_sword_el((int)(o / 0xDCu), o % 0xDCu); sa = own; }
         }
         if (coop_teeth_el) {
-            for (j = 0; j < 13; j++) { uint32_t e = coop_teeth_el + (uint32_t)n * 0xDC, q = sa + (uint32_t)src[j] * 0xDC; int32_t x, w;
+            for (j = 0; j < 19; j++) { uint32_t e = coop_teeth_el + (uint32_t)n * 0xDC, q = sa + (uint32_t)src[j] * 0xDC; int32_t x, w;
                 if (!MEM8(q + 0x24)) continue;
                 coop_el_copy(e, q); x = (int32_t)MEM32(e + 8); w = (int32_t)MEM32(e + 0x10);
                 if (src[j] == 9 || getenv("TT_COOP_TEETHPLACE")) MEM32(e + 8) = (uint32_t)((int32_t)A - x - w);   /* (placed: a negative width is not drawn here) */
@@ -7548,7 +7596,7 @@ void sub_0009C380(void)
     {   /* bot test: TT_COOP_TESTUPG = "hero:upgrade,...": those upgrades bought (their byte in 0x4AC5B0 + hero * 0x50), once at
          * the first take-over (in memory only: a run that doesn't save) */
         const char *v = getenv("TT_COOP_TESTUPG"); static int done;
-        if (v && !done && coop_p2_t0) { const char *p = v; done = 1;
+        if (v && !done && (coop_p2_t0 || MEM32(0x4AD050u) == 6u)) { const char *p = v; done = 1;   /* (or once in play: before player 2's sword is set up) */
             while (*p) { int h = atoi(p), u; const char *c = strchr(p, ':'); if (!c) break; u = atoi(c + 1);
                 if (h >= 1 && h <= 4 && u >= 0 && u < 0x50) { MEM8(0x4AC5B0u + (uint32_t)h * 0x50u + (uint32_t)u) = 1; tt_dbg("[COOPMOVES] test: hero %d's upgrade %d bought\n", h, u); }
                 p = strchr(c, ','); if (!p) break; p++; } }
@@ -10348,6 +10396,7 @@ static const uint32_t coop_sw_sc[] = { 0x4A55E0u, 0x4A55E4u, 0x4A84B4u, 0x4A5EA8
 static uint8_t coop_sw_p2a[COOP_SW_AN]; static uint32_t coop_sw_p2s[COOP_SW_NS]; static unsigned coop_sw_lv = ~0u;
 int coop_p2_sword_ok;
 uint32_t coop_p2_sword_el(int k, uint32_t off) { return *(uint32_t *)(coop_sw_p2a + (uint32_t)k * 0xDCu + off); }
+static uint32_t coop_p2_sword_shown(void) { uint32_t m = 0; int k; for (k = 0; k < 24; k++) if (coop_sw_p2a[(uint32_t)k * 0xDCu + 0x24u]) m |= 1u << k; return m; }
 uint8_t coop_p2_sword_vis(int k) { return coop_sw_p2a[(uint32_t)k * 0xDCu + 0x24u]; }
 extern void sub_000CCF30_gen(void);
 void sub_000CCF30(void)
@@ -10358,7 +10407,25 @@ void sub_000CCF30(void)
         || MEM32(0x4AD050u) != 6u || MEM32(p2) != 0x1741C0u || p2 != coop_twin) { coop_p2_sword_ok = 0; return; }   /* (in play only, on a live twin: after a level, its stats and save, coop_p2 was a freed actor -- a crash, a playtest) */
     for (i = 0; i < COOP_SW_AN; i++) cur[i] = MEM8(COOP_SW_A0 + i);
     for (i = 0; i < COOP_SW_NS; i++) cs[i] = MEM32(coop_sw_sc[i]);
-    if (coop_sw_lv != coop_level_n || !coop_p2_sword_ok) { coop_sw_lv = coop_level_n; memcpy(coop_sw_p2a, cur, COOP_SW_AN); memcpy(coop_sw_p2s, cs, sizeof cs); }   /* (his starts as player 1's) */
+    if (coop_sw_lv != coop_level_n || !coop_p2_sword_ok) { coop_sw_lv = coop_level_n; memcpy(coop_sw_p2a, cur, COOP_SW_AN); memcpy(coop_sw_p2s, cs, sizeof cs);   /* (his starts as player 1's) */
+        if (!getenv("TT_COOP_NOP2HUDINIT")) {   /* (1.9.9) and then his health upgrades' part of the HUD's level-start set-up of the
+                                                 * sword (0xCCC10, run once, for player 1 only: player 2's showed player 1's), on his copy:
+                                                 * with n upgrades (0xCCA50, in his context) pieces j, 9 + j and 16 + j shown for j = 1..n
+                                                 * (the grey segments under the blade), n + 1..6 hidden; the last one's textures [0x4A82C8]
+                                                 * / [0x4A82CC], the others' [0x4A82D4] / [0x4A82D0]; piece 9 (the strip they sit on) shown,
+                                                 * 28 + 27 (n - 1) wide, texture [0x4A82DC], its width also the bar's extra ([0x4A55E4]).
+                                                 * (The whole of 0xCCC10 run for him also made the HUD's textures again: a crash.) */
+            extern uint32_t tt_gcall(uint32_t va, uint32_t thisptr, int n, const uint32_t *args); int s0 = tt_coop_enter_ctx(), n = (int)tt_gcall(0x000CCA50u, 0, 0, NULL), j; uint32_t w = 0;
+            if (s0) tt_coop_leave();
+            if (n < 0 || n > 6) n = 0;
+            #define COOP_SWP(k, off) (*(uint32_t *)(coop_sw_p2a + (uint32_t)(k) * 0xDCu + (off)))
+            for (j = 1; j <= 6; j++) { int on = j <= n; coop_sw_p2a[j * 0xDCu + 0x24u] = coop_sw_p2a[(9 + j) * 0xDCu + 0x24u] = coop_sw_p2a[(16 + j) * 0xDCu + 0x24u] = (uint8_t)on;
+                if (on) { COOP_SWP(j, 0xB8u) = MEM32(j == n ? 0x4A82CCu : 0x4A82D4u); COOP_SWP(9 + j, 0xB8u) = MEM32(j == n ? 0x4A82C8u : 0x4A82D0u); } }
+            if (n) { w = 28u + 27u * (uint32_t)(n - 1); COOP_SWP(9, 0x10u) = w; COOP_SWP(9, 0xB8u) = MEM32(0x4A82DCu); }
+            coop_sw_p2a[9 * 0xDCu + 0x24u] = (uint8_t)(n != 0); coop_sw_p2s[1] = w;
+            #undef COOP_SWP
+            tt_dbg("[P2SWORD] his sword set up for his %d health upgrades (player 1's bar: +%u)\n", n, MEM32(0x4A55E4u));
+        } }
     for (i = 0; i < COOP_SW_AN; i++) MEM8(COOP_SW_A0 + i) = coop_sw_p2a[i];
     for (i = 0; i < COOP_SW_NS; i++) MEM32(coop_sw_sc[i]) = coop_sw_p2s[i];
     sp = esp; r0 = eax; r1 = ecx; r2 = edx; sw = tt_coop_enter_ctx();
@@ -10378,8 +10445,8 @@ void sub_000CCF30(void)
     for (i = 0; i < COOP_SW_NS; i++) MEM32(coop_sw_sc[i]) = cs[i];
     coop_p2_sword_ok = 1;
     if (getenv("TT_COOP_SWORDLOG")) { static uint32_t lt; if (coop_now() - lt > 400u) { lt = coop_now();
-        tt_dbg("[P2SWORD] P2 hp %d/%d (HUD %d of %d): silver (9) %d,%dx%d vis %u, red %d, green %d | P1's silver %dx%d vis %u\n", (int32_t)MEM32(p2 + 0x2FC), (int32_t)MEM32(p2 + 0x300), (int32_t)coop_sw_p2s[8], (int32_t)coop_sw_p2s[9],
-               (int32_t)coop_p2_sword_el(9, 8), (int32_t)coop_p2_sword_el(9, 0x10), (int32_t)coop_p2_sword_el(9, 0x14), coop_p2_sword_vis(9), (int32_t)coop_p2_sword_el(7, 0x10), (int32_t)coop_p2_sword_el(8, 0x10),
+        tt_dbg("[P2SWORD] P2 hp %d/%d (HUD %d of %d): silver (9) %d,%dx%d vis %u, red %d, green %d, shown pieces %06X | P1's silver %dx%d vis %u\n", (int32_t)MEM32(p2 + 0x2FC), (int32_t)MEM32(p2 + 0x300), (int32_t)coop_sw_p2s[8], (int32_t)coop_sw_p2s[9],
+               (int32_t)coop_p2_sword_el(9, 8), (int32_t)coop_p2_sword_el(9, 0x10), (int32_t)coop_p2_sword_el(9, 0x14), coop_p2_sword_vis(9), (int32_t)coop_p2_sword_el(7, 0x10), (int32_t)coop_p2_sword_el(8, 0x10), coop_p2_sword_shown(),
                (int32_t)MEM32(COOP_SW_A0 + 9 * 0xDC + 0x10), (int32_t)MEM32(COOP_SW_A0 + 9 * 0xDC + 0x14), MEM8(COOP_SW_A0 + 9 * 0xDC + 0x24)); } }
 }
 

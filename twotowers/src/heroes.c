@@ -7266,7 +7266,11 @@ int tt_hk(int id, int phase, uint32_t *r)
             static const struct { const char *who; uint32_t pj; } own[] = { { "aragorn", 13 }, { "legolas", 19 }, { "gimli", 16 }, { "isildur", 15 },
                 { "frodo", 10 }, { "uruk", 10 }, { "gandalf", 15 }, { "sauron", 15 }, { "nazgul", 10 }, { "orc", 10 }, { "eomer", 10 } };
             const char *c = tt_coop_p2_char_now; uint32_t pj = G32(g_esp + 16), to = pj; int q;
-            if (c) { to = 13u; for (q = 0; q < (int)(sizeof own / sizeof own[0]); q++) if (!_stricmp(c, own[q].who)) { to = own[q].pj; break; } }
+            /* (1.9.9) a retail hero's pick kept: in his context the game picks it from his own hero's bow upgrades (17-20, asked by
+             * 0x9BC30 for him, coop_moves_hero_swap): Legolas with upgrade 20 fires 23, the glowing arrow, and this put it back to 19 --
+             * a playtest asked whether player 2 uses his upgraded bow. Guests as before. TT_COOP_P2PROJMAP: every hero as before */
+            if (c && tt_heroes_retail_byte(c) >= 1 && tt_heroes_retail_byte(c) <= 4 && !getenv("TT_COOP_P2PROJMAP") && !getenv("TT_COOP_NOP2MOVES")) to = pj;
+            else if (c) { to = 13u; for (q = 0; q < (int)(sizeof own / sizeof own[0]); q++) if (!_stricmp(c, own[q].who)) { to = own[q].pj; break; } }
             if (to != pj) G32(g_esp + 16) = to;
             if (s_coop_skin && s_playas >= 0 && s_skins[s_playas].beam && !getenv("TT_NOBEAM")) { s_beam_p2obj_log[s_beam_p2n & 7] = r[1]; s_beam_p2obj[s_beam_p2n++ & 7] = r[1]; }   /* his bolt: a beam (below) */
             { static int n; uint32_t sh = G32(g_esp + 4), m = sh >= 0x80000000u && sh < 0x84000000u ? G32(sh + 0x494) : 0;
