@@ -1,0 +1,99 @@
+/* Generado por presentacion_ampliacion.py. Nombres; las mecanicas siguen las tablas del heroe. */
+static const UpgName s_upn_elvenwarrior_nuevo[] = {
+    { "Isildur's Swift Terror", "Helm Swift Strike" },
+    { "Isildur's Deliverance", "Wall of the Eldar" },
+    { "Isildur's Death Charge", "Charge of Helm" },
+    { "Isildur's Gambit", "Elven Gambit" },
+    { "Isildur's War Rush", "Elven War Rush" },
+    { "Isildur's Judgment", "Defender of Helm" },
+    { "Isildur's", "Elven's" }, { NULL,NULL } };
+static const UpgName s_upn_troll_nuevo[] = {
+    { "Isildur's Swift Terror", "Crushing Blow" },
+    { "Isildur's Deliverance", "Stone Guard" },
+    { "Isildur's Death Charge", "Cave Troll Charge" },
+    { "Isildur's Gambit", "Ground Pound" },
+    { "Isildur's War Rush", "Moria Rampage" },
+    { "Isildur's Judgment", "Troll's Fury" },
+    /* (132) rocas en lugar del arco */
+    { "Fired like the Dunedain Bow, the barbed arrows of the Rohirrim do serious damage.", "Hurled like Moria Stones, these broken pillars do serious damage." },
+    { "The iron arrows of Gondor do terrible damage.  (Requires Rohan Bow)", "Burning rocks do terrible damage.  (Requires Pit Rocks)" },
+    { "Fire with the A button", "Hurl with the A button" },
+    { "Dunedain Bow", "Moria Stones" }, { "Rohan Bow", "Pit Rocks" }, { "Gondor Bow", "Fire Rocks" },
+    { "Sword Parry", "Mace Parry" }, { "Master Swordsman", "Master of Maces" },
+    { "Isildur's", "Troll's" }, { NULL,NULL } };
+/* (1.9.9) the Ent's combo names (Versus only) */
+static const UpgName s_upn_ent_nuevo[] = {
+    { "Isildur's Swift Terror", "Rootbreaker" },
+    { "Isildur's Deliverance", "Bark Shield" },
+    { "Isildur's Death Charge", "March of the Ents" },
+    { "Isildur's Gambit", "Hasty Stomp" },
+    { "Isildur's War Rush", "Wrath of Fangorn" },
+    { "Isildur's Judgment", "Onodrim's Fury" },
+    { "Sword Parry", "Bark Parry" }, { "Master Swordsman", "Master of the Forest" },
+    { "Isildur's", "Ent's" }, { NULL,NULL } };
+/* (1.9.9) the shield orc's combo names (Versus only: he has no campaign; names only, his moves are not upgraded) */
+static const UpgName s_upn_orc_nuevo[] = {
+    { "Isildur's Swift Terror", "Shield Bash" },
+    { "Isildur's Deliverance", "Shield Wall" },
+    { "Isildur's Death Charge", "Black Gate Charge" },
+    { "Isildur's Gambit", "Grunt's Gambit" },
+    { "Isildur's War Rush", "Mordor War Rush" },
+    { "Isildur's Judgment", "Orc Butchery" },
+    { "Sword Parry", "Shield Parry" }, { "Master Swordsman", "Master of Shields" },
+    { "Isildur's", "Orc's" }, { NULL,NULL } };
+static const UpgName s_upn_urukcap_nuevo[] = {
+    { "Isildur's Swift Terror", "Captain Swift Strike" },
+    { "Isildur's Deliverance", "Isengard Guard" },
+    { "Isildur's Death Charge", "Uruk Death Charge" },
+    { "Isildur's Gambit", "Uruk Gambit" },
+    { "Isildur's War Rush", "Uruk War Rush" },
+    { "Isildur's Judgment", "Uruk Judgment" },
+    { "Isildur's", "Uruk's" }, { NULL,NULL } };
+static const UpgName s_upn_saruman[] = {   /* (1.9.9) */
+    { "Isildur's Swift Terror", "Voice of Saruman" },
+    { "Isildur's Deliverance", "Orthanc's Defiance" },
+    { "Isildur's Death Charge", "Isengard Charge" },
+    { "Isildur's Gambit", "Deceiver's Gambit" },
+    { "Isildur's War Rush", "Isengard War Rush" },
+    { "Isildur's Judgment", "Wrath of the White Hand" },
+    { "Fired like the Dunedain Bow, the barbed arrows of the Rohirrim do serious damage.", "Cast like Palantir Fire, the sorcery of Orthanc does serious damage." },
+    { "The iron arrows of Gondor do terrible damage.  (Requires Rohan Bow)", "The fire of Isengard burns terribly. (Requires Wizard's Blast)" },
+    { "Fire with the A button", "Cast with the A button" },
+    { "Dunedain Bow", "Palantir Fire" }, { "Rohan Bow", "Wizard's Blast" }, { "Gondor Bow", "Orthanc Fire" },
+    { "Sword Parry", "Staff Parry" }, { "Ranger Fury", "Istari Fury" },
+    { "Strength of the Stewards", "Strength of Isengard" }, { "Strength of Isildur", "Strength of Curunir" },
+    { "Strength of Elendil", "Strength of the Palantir" }, { "Strength of the Argonath", "Strength of Orthanc" },
+    { "Wilderness Rage", "Wizard's Rage" }, { "Master Swordsman", "Master of the Staff" },
+    { "Wrath of Numenor", "Wrath of Isengard" }, { "Bane of Saruman", "Bane of Rohan" },
+    { "Isildur's", "Saruman's" }, { NULL,NULL } };
+/* (1.9.9) by name; en: the title in other languages (the rest stays the language's) */
+static const struct { const char *guest; uint32_t hash; const char *text, *en; } s_new_es[] = {
+    { "elvenwarrior",0xDEEF44C1u,"Elfo de Helm","Elven Warrior" },
+    { "elvenwarrior",0xF7D6DC76u,"Golpe de Helm",NULL },
+    { "elvenwarrior",0xB34DCC39u,"Muro de los eldar",NULL },
+    { "elvenwarrior",0x207C1523u,"Carga de Helm",NULL },
+    { "elvenwarrior",0x6C2653E9u,"Finta del elfo",NULL },
+    { "elvenwarrior",0x6B68444Du,"Furia del elfo",NULL },
+    { "elvenwarrior",0x701FD063u,"Defensor de Helm",NULL },
+    { "troll",0xDEEF44C1u,"Troll de las cavernas","Cave Troll" },
+    { "troll",0xF7D6DC76u,"Golpe aplastante",NULL },
+    { "troll",0xB34DCC39u,"Guardia de piedra",NULL },
+    { "troll",0x207C1523u,"Carga de la cueva",NULL },
+    { "troll",0x6C2653E9u,"Finta del troll",NULL },
+    { "troll",0x6B68444Du,"Furia de Moria",NULL },
+    { "troll",0x701FD063u,"Juicio del troll",NULL },
+    { "urukcap",0xDEEF44C1u,"Capitan Uruk","Uruk Captain" },
+    { "urukcap",0xF7D6DC76u,"Golpe del Uruk",NULL },
+    { "urukcap",0xB34DCC39u,"Guardia de Isengard",NULL },
+    { "urukcap",0x207C1523u,"Carga del Uruk",NULL },
+    { "urukcap",0x6C2653E9u,"Finta del Uruk",NULL },
+    { "urukcap",0x6B68444Du,"Furia del Uruk",NULL },
+    { "urukcap",0x701FD063u,"Juicio del Uruk",NULL },
+    { "saruman",0xDEEF44C1u,"Saruman","Saruman" },
+    { "saruman",0xF7D6DC76u,"Voz de Saruman",NULL },
+    { "saruman",0xB34DCC39u,"Desafio de Orthanc",NULL },
+    { "saruman",0x207C1523u,"Carga de Isengard",NULL },
+    { "saruman",0x6C2653E9u,"Finta del embaucador",NULL },
+    { "saruman",0x6B68444Du,"Furia de Isengard",NULL },
+    { "saruman",0x701FD063u,"Ira de la Mano Blanca",NULL },
+};

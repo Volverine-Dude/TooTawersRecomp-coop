@@ -1,23 +1,23 @@
-# The Two Towers Recompiled v1.9.8
+# The Two Towers Recompiled v1.9.9
 
 A native PC port of *The Lord of the Rings: The Two Towers* (Xbox, USA, 2002), made by static recompilation. It needs your own copy of the game, either the disc image (ISO) or an extracted folder. No game data is included.
 
-> ⚠ **Work in progress.** The game is fully playable, but not everything works perfectly yet. Unlocked frame rates work but are experimental. It is recommended to play the game at no more than 1000 fps. See known issues. 
+> ⚠ **Work in progress.** The game is fully playable, but not everything works perfectly yet. It is recommended to play the game at no more than 1000 fps. Co op and Versus are still in alpha (see co-op.md for how these modes work). See known issues at the bottom.
 
 ## Downloads
 
 | File | For |
 |---|---|
-| `TwoTowers-Recompiled-v1.9.8-win64.zip` | Windows 7 SP1, 8.1, 10, 11 (64-bit) |
-| `TwoTowers-Recompiled-v1.9.8-linux-x86_64.tar.gz` | 64-bit Linux, glibc 2.27 or newer |
-| `TwoTowers-Recompiled-v1.9.8-macos-x86_64.tar.gz` | macOS 10.15 or newer, Intel or Apple silicon (through Rosetta 2) |
-| `TwoTowers-Recompiled-v1.9.8-source.zip` | Source code |
+| `TwoTowers-Recompiled-v1.9.9-win64.zip` | Windows 7 SP1, 8.1, 10, 11 (64-bit) |
+| `TwoTowers-Recompiled-v1.9.9-linux-x86_64.tar.gz` | 64-bit Linux, glibc 2.27 or newer |
+| `TwoTowers-Recompiled-v1.9.9-x86_64.AppImage` | 64-bit Linux, glibc 2.27 or newer, one file |
+| `TwoTowers-Recompiled-v1.9.9-macos-x86_64.tar.gz` | macOS 10.15 or newer, Intel or Apple silicon (Rosetta 2); not yet tested on a Mac |
+| `TwoTowers-Recompiled-v1.9.9-source.zip` | Source code |
 
-
-**Ultra textures, GameCube compatibility pack:** download the GameCube high-resolution texture pack (`GLOS69`) separately from its author. It is not part of this release.
+**Ultra textures, GameCube pack:** download the GameCube high-resolution texture pack (`GLOS69`) separately from its author. It is not part of this release.
 https://www.moddb.com/mods/the-two-towers-textures-4k-ai-remaster/addons/the-two-towers-textures-4k-ai-remaster-575gb-version-native
 
-Updating from 1.9.7 or earlier: unpack over your old folder, or into a new one and copy your `game_files` folder. Your saves and settings carry over. Copy the new `textures_ultra\pairs.txt` too (it comes with the download); a prepared `GLOS69` pack is not prepared again.
+Updating from 1.9.8 or earlier: unpack over your old folder, or into a new one and copy your `game_files` folder. Your saves, settings and achievements carry over.
 
 ## What the port adds
 
@@ -31,10 +31,81 @@ Updating from 1.9.7 or earlier: unpack over your old folder, or into a new one a
 - **Controllers**: Xbox, PlayStation, Switch Pro and others with rumble; prompts that match what you play with.
 - **Menus**: Display and Controls options pages in game, the F10 settings panel, an Exit item.
 - **Couch co-op** *(alpha)*: two players on one PC, each with their own hero, controller, weapons, health, ammo, experience and upgrades. With thanks in part to [Volverine-Dude](https://github.com/Volverine-Dude); see [COOP.md](COOP.md).
-- **Versus** *(new/alpha)*: player 1 against player 2, one on one, on every level but Westfold, with any hero; see [COOP.md](COOP.md). More modes characters and maps to come in future updates. 
+- **Versus** *(alpha)*: player 1 against player 2, one on one, on every level but Westfold, with any hero, enemies in some arenas, and Troll Battle; see [COOP.md](COOP.md). More modes, characters and maps to come in future updates.
 - **Achievements**: earned as you play, listed on the F10 panel's Achievements page.
-- **Mods**: the ECTS 2002 demo's HUD, orange health pickups, and seven new playable heroes.
+- **Mods**: the ECTS 2002 demo's HUD, orange health pickups, and seven new playable heroes (more in Versus).
 - **Difficulties**: New difficulty (impossible difficulty) added to the game.
+
+## What's new in 1.9.9
+
+### The128ReBits' improvements
+Made possible by [The128ReBits](https://github.com/The128ReBits).
+- **More versus exclusive hero's:** the **Elven Warrior**, the **Uruk Captain** the **Cave Troll**, the **Ent** and **Saruman**, each with his own moves and weapons.
+- **Animation improvements** for all the extra heroes. 
+
+### Versus: new heroes and a new mode
+- **New Versus heroes:** **Saruman** (his own staff casts), the **Ent** (Treebeard from Fangorn Forest: his walk, his blows, thrown rocks and sounds), the **Elven Warrior**, the **Uruk Captain**.
+- **Troll Battle** (Mode: on the Versus menu): cave troll against cave troll in Balin's Tomb or Amon Hen, with twice the health, thrown logs, its own end picture, its own sounds for FIGHT and the match's end, its own results table and kept records.
+- **Both players may pick the same hero** in Deathmatch.
+- **Enemies in the arenas:** a few of the level's own orcs and Uruk-hai on **Amon Hen**, **Fangorn Forest**, the **Plains of Rohan**, the **Breached Wall** and the **Hornburg Courtyard**, spread over the map. They attack both players with their own sounds and hit as hard as a player does. 
+- **Random starts:** each match begins somewhere else on the map, and later rounds go on where the players stand. Starts are always on the map's ground (Balin's Tomb: its hall floor, no ledges).
+- **Explore the whole map:** the levels' parts are joined (Amon Hen from the start to Lurtz's ruins), every part is drawn, and the map's edges hold both players. The props keep their collision and still break.
+- **The camera** keeps both players in view by the map's walls, and stands further back when the Ent or a troll is fighting.
+- **Hits from any side:** blows land on a hero's side or back, and on the trolls' and the Ent's bulk.
+- A horn at the end of each round and **a random level's music** each match (arenas with enemies keep their own).
+- **Mount Doom** in Versus: the whole arena is playable for both players, over the lava and on its far side, with its music.
+- **Restart Match** and **Restart Round** in the pause menu (Back / Y, or a click on the note at the top): either starts again from a new random spot; Restart Round keeps the score.
+- The enemies' blows don't count before a round begins (the countdown and between rounds).
+- The round's ammo and health pickups lie on the ground, where both players can take them.
+- **Plains of Rohan:** starts on the open field, and both players are always shown.
+- **Hornburg Courtyard:** the camera no longer zooms in by the west wall and stays zoomed (the level's own close view took over), and the players can't walk out through the yard's wall.
+- The Versus bot rests after landing a hit (it could keep player 1 down in Troll Battle).
+
+
+### Achievements
+- **25 new achievements for Versus:** Troll Battle (win 3 or 10 matches, a flawless match, a 400 smash, 25,000 damage, a round under 20 seconds, 25 logs or rocks landed), the arenas' enemies (slay 25 and 150, win on all five enemy arenas), win 3 matches as each of the newer heroes (Saruman, the Ent, the Uruk Captain, the Elven Warrior, Lurtz, Sauron, Gandalf, Elrond, Boromir, Frodo, the Berserker), the Ent's rocks and a mirror match.
+- **The note says why:** an achievement's note now shows what it was for, so there is no need to open F10 each time.
+
+### Co-op Fixes
+- **Player 2's bow** (or his own ranged weapon) shows for every hero.
+- **Player 2's Perfect glow** shows on his gauge, as player 1's does.
+- Player 2's weapons are drawn again after he respawns.
+- Player 2 can kick the ladders down again beside a different player 1 hero.
+- Player 2's special move names on his side, his own rumble on the second controller.
+- The heroes take more hits in co-op (125% health).
+- Player 2's arrows and blows hit the **Watcher in the Water**.
+- Player 2 picks up the level's own arrows and health (the arrows by Balin's Tomb's cave troll), not only the enemies' drops.
+- **No leash:** player 2 can roam the level on his own; when the two are far apart the camera goes over to player 1.
+- **P2 Teleport on/off from the pause menu:** a note at the top while paused; Y (the I key) or a click on it switches it, without going to the settings.
+- A stuck player 2 is moved beside player 1 only with P2 Teleport on.
+- **Player 2 breaks what player 1 can:** boxes, Fangorn Forest's log, the Breached Wall's catapult, and the enemies' shields with heavy attacks.
+- The Breached Wall's catapult bar is drawn whole under player 2's health bar (half of it was on top of his bar).
+
+### Other Fixes
+- **Linux, PlayStation 3 controller:** a DualShock 3 is read through the system's own driver. It was found and named but sent no input on some systems (issue #14).
+- Versus starts no longer leave the screen black (Fangorn Forest, the Gates of Moria).
+- A player stuck by a wall after a round can step back out.
+- New Game: Easy, Normal, Expert and Impossible can be clicked with the mouse.
+- The Walk key works for both players in co-op and Versus.
+- Lurtz and the Uruk Captain fall onto the ground (their falls no longer float), and Lurtz's hit no longer lifts him.
+- The Uruk extra hero is renamed to "Berserker"
+
+### Linux AppImage
+- `TwoTowers-Recompiled-v1.9.9-x86_64.AppImage`: one file with SDL2 inside (used when your system has none). Make it executable (`chmod +x`, or Properties > Permissions) and run it; the first time it asks for your disc image.
+- The game's folder (settings, saves, log, game files) is `TwoTowers-Recompiled` beside the AppImage, or `~/.local/share/TwoTowers-Recompiled` when that can't be written. A newer AppImage updates the program there and keeps your saves and settings.
+
+## Tested (1.9.9)
+- Linux (OpenGL): Versus bot runs on Amon Hen, Fangorn Forest, the Plains of Rohan, the Breached Wall, the Hornburg Courtyard, Balin's Tomb and the Gates of Moria (random starts, enemies fighting both players, the Ent felling orcs); co-op runs in Fangorn Forest (player 2's respawn, his Perfect glow).
+- Windows: played by hand on the developer's PC through the 1.9.9 test builds.
+- Windows, Linux and macOS builds compile.
+- Not tested: the macOS build on a Mac; the PlayStation 3 controller fix on the reporter's Linux system; the trolls breaking props.
+
+## Known issues (1.9.9)
+- Co-op is not fully playable with the extra heroes mod. It is recommended to play co op with only the four main heroes. The extra characters are playable, but they do not show up in cut scenes properly yet. Even with player 1 as a main hero and player 2 as an extra hero, the in game cut scenes don't show the proper animations for both hero's. Some HUD elements might not show correctly with the extra heros as well (Sauron as player 2 shows his ammo hud for both players)
+- Singleplayer/Co-op: Singleplayer is entirely unaffected by co op or versus mode except for the co op setting for double pickups. If the setting is enabled in the co op setting, it also applies in singleplayer. It is recommended to disable the setting while playing the base game, unless you prefer to have more health pickups. 
+- macOS (OpenGL) is still experimental
+- Versus spawns are made random for each map, but sometimes a player can still get stuck in a spawn. A "reset game/round" setting has been added to the pause menu for when this occurs. It resets the entire match or the specific round while also putting both players in different spawns/locations.
+- Enemies/random NPC's around versus maps don't respawn entirely if a match is reset. If they were killed off during one of the rounds, they will stay that way until returning to the main menu and starting the match again. 
 
 ## What's new in 1.9.8
 

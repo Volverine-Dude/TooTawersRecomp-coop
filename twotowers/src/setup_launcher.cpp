@@ -542,9 +542,10 @@ static void gfxBuildOptions()
     g_gfx.push_back({L"Mod: Orange health pickups (shown in pre-release & making-of videos)", L"e3_pickups", L"0",
         {{L"Off (green, as retail)", L"0"}, {L"On (orange health pickups)", L"1"}}});
     g_gfx.back().sec = L"Mods";
-    g_gfx.push_back({L"Mod: Extra heroes (Boromir, Gandalf, Frodo, Lurtz, Elrond, Uruk-hai, Sauron; unlock with Isildur)", L"extra_heroes", L"0",
-        {{L"Off (four heroes, as retail)", L"0"}, {L"On (eleven heroes)", L"1"},
-         {L"On, unlocked for testing (save not changed)", L"2"}}});
+    g_gfx.push_back({L"Mod: 13 extra heroes", L"extra_heroes", L"3",
+        {{L"Off (four heroes, as retail)", L"0"}, {L"Unlock through Isildur and Orthanc victories (progress counts)", L"1"},
+         {L"On, unlocked for testing (save not changed)", L"2"},
+         {L"Extras unlocked from the start (progress counts)", L"3"}}});
     g_gfx.back().sec = L"Mods";
     for (auto &o : g_gfx) {
         o.label = T(o.label);

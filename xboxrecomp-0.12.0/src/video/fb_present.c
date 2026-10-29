@@ -447,6 +447,13 @@ static LRESULT CALLBACK fb_wndproc(HWND h, UINT m, WPARAM w, LPARAM l)
             xbox_InputStopRumble();       /* no pad left shaking */
         }
         InterlockedExchange(&s_fb_running, 0);
+        /* Igual que Salir en el menu: detener ESTE proceso. Dejar solo la
+         * ventana detenida permitia que el invitado siguiera enviando frames
+         * al HWND destruido (y redimensionase el swapchain con datos invalidos). */
+        if (m == WM_CLOSE) {
+            fflush(stdout); fflush(stderr);
+            TerminateProcess(GetCurrentProcess(), 0);
+        }
         return 0;
 
     case WM_SETFOCUS:
@@ -457,6 +464,11 @@ static LRESULT CALLBACK fb_wndproc(HWND h, UINT m, WPARAM w, LPARAM l)
          * the game: it is not a press of the button the left mouse button
          * stands for. */
         if (m == WM_ACTIVATE && LOWORD(w) == WA_CLICKACTIVE) s_swallow_click = 1;
+        /* (1.9.9) every key let go as the window loses or regains the keyboard: a key held when Alt+Tab took the keyboard
+         * away (Alt itself, or a direction) never sent its release here, and stayed held -- a playtest's troll ran one way
+         * whatever was pressed after an Alt+Tab, his attacks still answering */
+        if (m == WM_SETFOCUS || m == WM_ACTIVATE) { int k; for (k = 0; k < 256; k++) if (k != VK_LBUTTON && k != VK_RBUTTON && k != VK_MBUTTON) s_key_down[k] = 0;
+            { static int n2; if (n2++ < 20) { fprintf(stderr, "  [FBWIN] %s: the keys let go\n", m == WM_SETFOCUS ? "focus back" : LOWORD(w) ? "activated" : "deactivated"); fflush(stderr); } } }
         break;
     }
     case WM_KEYDOWN:

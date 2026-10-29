@@ -2748,3 +2748,564 @@ xboxrecomp-0.12.0/src/kernel/xbox_memory_layout.c, kernel_bridge.c
 xboxrecomp-0.12.0/src/kernel/nv2a_sw3d.inc
   - A texture slot's "looks like a movie" count reset after 1.5 s without
     a decode (Ultra text dropped off menus after reloads).
+
+-- 1.9.9: The128ReBits' R8 -------------------------------------------------------
+twotowers/src (The128ReBits' R8, PR #11, merged on 1.9.8)
+  - Six new extra heroes from the disc's NPC assets (elvenwarrior,
+    elvenarcher, troll, rohan, urukcap, gandalfwhite; skins 7-12, the
+    Versus-only three after them), the Xbox animation codec fix, native
+    combos and weapon profiles, the playable troll, per-character records
+    by name (TTH3), atomic unlocks, extra_heroes modes 0-3.
+  - Five language axes (text, subtitles, in-game voices, cutscene voices,
+    films); SRT film subtitles drawn over Bink (Windows); non-USA XBEs
+    refused; the optional DLSS-5 hook; tools/regions.
+xboxrecomp-0.12.0/src/kernel/kernel_path.c
+  - Partition1's UDATA and TDATA under save_dir (<game>/saves), with the
+    old ones copied there once (Win32, and POSIX in 1.9.9).
+On top of the merge
+  - lang.c / lang_fmv.inc / heroes: build on Linux and macOS (directory
+    listing, rename(), the SRT overlay Windows-only for now).
+  - The six as co-op player 2 (their projectiles: troll and Uruk captain
+    a rock, the elves Legolas' arrow, Gandalf the White Gandalf's) and in
+    the Versus hero list; their short names in English.
+  - Player 2 as a retail hero beside a different player 1 hero: his box
+    tested with +0x466 up, as the extra heroes' since 1.9.8 (Deeping Wall:
+    69 boxes, 17 with the flag up, 6 contacts; after: all, 71 contacts).
+    TT_COOP_P2ATKFLAGGUEST.
+twotowers/tools/appimage
+  - The Linux AppImage: AppRun (the game's folder beside the AppImage),
+    pysquashfs.py (a SquashFS 4.0 writer in Python), make_appimage.sh.
+
+-- 1.9.9: the roster, Troll Battle, player 2 ---------------------------------------
+twotowers/src/heroes.c, heroes_ampliacion_textos.inc, heroes_troll_throw.h
+  - Gandalf the White replaced by Saruman (Orthanc's: mesh 8F3B37CA, set
+    56D8D87C, texture EF4942FD, his staff 30028EA4), his own map of the
+    hero's slots, his own upgrade names and green-yellow / yellow beams
+    (effect modes 3 and 4, by turns).
+  - The Rohan captain and the elven archer removed; the elven warrior,
+    the troll, the Uruk captain and Saruman are Versus heroes (the menus
+    keep the seven originals, N_SEL 7).
+  - The troll's ranged attack: Fangorn Forest's troll's throw (14FANG2
+    set 0x0215F674, slot 66) with its bones put in the cave troll's order,
+    in place of the bow. TT_TROLLBOWTHROW. His voices are Balin's Tomb's
+    (1406-1414).
+twotowers/src/options.c
+  - Versus "Mode:" row: Deathmatch, or Troll Battle (both players the
+    cave troll; Balin's Tomb, Amon Hen or Mount Doom).
+twotowers/src/twotowers_manual.c
+  - Versus: the players start further apart (42); a player off a ledge
+    loses the round (TT_VS_NOFALLLOSS); the kill move (RT) does no damage
+    the first two times in a round ("STAB GUARD: n LEFT") and then at most
+    40% of full health (TT_VS_STABPCT); a parried blow rings with the
+    campaign's clang (0xDD), a landed one with the flesh hit the game last
+    played; the shield orc's shield rings, his grunt under it, a crack and
+    his cry when it breaks (TT_VS_NOSHIELDSND).
+  - Player 2's rumble: the game's per-port rumble run (0x1F8A0) made for
+    port 1 too, and his virtual pad's motors sent to the PC's second
+    controller (TT_COOP_NOP2RUMBLE).
+twotowers/src/versus.c
+  - A random level's music for each match (TT_VS_FIXEDMUSIC); the heroes'
+    blows at full strength and their steps louder; a hero's sound not in
+    the arena's bank taken from his own level's; the troll's swings his
+    club's slam (TT_VS_TROLLWHOOSH).
+twotowers/src/e3hud.c
+  - Combo runes and labels per player: player 2's (port 1) on his side,
+    mirrored; alone, any controller is player 1's.
+
+-- 1.9.9: walking, the troll's log, Saruman in the campaign ------------------------
+twotowers/src/twotowers_manual.c
+  - Co-op and Versus: the walk timer (0x43B0FC: the control step raises
+    INP_WALK once a part push has been held a moment) is per player now;
+    the other player's step put it back to 0 each frame, so neither could
+    walk and an idle hero stood in the walk's first steps over and over.
+  - Versus: a hero's lock on the other only while he fights (a press in
+    the last 1.5 s, TT_VS_TGTMS) and within 7 units (TT_VS_TGTR): held from
+    anywhere it kept him in the engage stance's loop at rest and steered
+    his moves round the other (TT_VS_OLDTGT: as before).
+  - The heroes take more hits: full health 125% in the campaign and co-op
+    (TT_HPPCT), Versus 2000 (was 1500).
+  - The cave troll's club ends each swing with Balin's Tomb's slam (930)
+    in every mode (TT_TROLLSLAM_MS, TT_NOTROLLSLAM).
+twotowers/src/heroes.c
+  - Saruman in the character select after Sauron (one win more), his
+    name picture (tools/names), the campaign and co-op.
+  - The troll throws Fangorn's trolls' log (projectile 8; its prop wears
+    the bark texture, added from Fangorn Forest, in his levels).
+    TT_TROLLROCK: the rock.
+  - Troll Battle: player 2 is the other troll, Fangorn's lighter one, on
+    the cave troll's moves (his bones put in the cave troll's order).
+  - Troll back at skin 9 (heroes_weapon_profile.h and the build's troll
+    patches name it there).
+twotowers/src/menus.c
+  - (test) TT_P1SCRIPT steps "LY=<value>": a part push of the stick.
+
+-- 1.9.9: player 2's moves, Saruman's own moves, input, languages as in 1.9.8 ------
+twotowers/src/heroes.c
+  - s_pools back in s_skins' order (Saruman, Uruk captain, troll at 7, 8,
+    9): Saruman had the troll's moves (his casts stood still, his ranged
+    was a bow pull) and the troll Saruman's. Saruman's own moves again,
+    his float for the ranged; a check at start names a pool out of place.
+  - Saruman's select: Orthanc's laugh (21ORTH2 2621) and cast.
+  - The troll's and Saruman's ranged pictures (hudammo, upgitems): the
+    tree and the staff, with alpha.
+  - Player 2's launches are his: player 1's guest beam no longer replaces
+    Legolas' arrows as player 2.
+  - Player 2's special move names on his side, with his own names.
+twotowers/src/twotowers_manual.c
+  - The special move name (HUD element 1.15, text 0x4A4A98) raised in
+    player 2's turn is shown mirrored on his side; player 1's left alone.
+  - The troll's slam armed before Versus' sound routing (it never played
+    there).
+xboxrecomp-0.12.0/src/input/xinput_device.c
+  - On Windows itself the keyboard is read from the start: the Enter that
+    launched the game stayed held as Start, so the controller's Start
+    never paused and the main menu kept choosing (only a left Alt let it
+    go). A key the keyboard reports up is let go after 250 ms.
+twotowers/src/lang.c, setup_launcher.cpp, main.c, menus.c
+  - Languages as in 1.9.8: one language for the game and the launcher.
+    The R8 subtitle/voice/film language choices, the SRT subtitles, the
+    launcher's interface-language and DLSS 5 buttons, the DLSS 5 hooks and
+    the USA-XBE-only check taken out (dlss5.inc, lang_fmv.inc,
+    xbe_version.inc removed).
+
+-- 1.9.9: Versus falls, player 2's move names, the Berserker, Lurtz and the captain on the ground --
+twotowers/src/twotowers_manual.c
+  - Versus: none of the co-op's rules that put player 2 beside player 1
+    (start of play, catch-up, a fall below him, player 1's jump, the
+    pathmap edge, the leash). They undid the arena's spacing and wrote
+    player 1's height at a spot on other ground: under a rise there, a
+    hero fell through the map and the screen went black (Fangorn).
+  - A hero set on a new spot (the spread at the start, going on in the
+    bigger arenas) is put TT_VS_LIFT (8) units over the higher of the two
+    and drops onto the ground there.
+  - The edge guard: the spot he is put back on counts as safe only once
+    he stands there; put back and fallen again at once, beside the other.
+  - Only a kick off a ledge ends a round (within TT_VS_KICKFALLMS, 4 s,
+    of the other's kick); a hero who falls on his own is put back.
+  - Player 2's special move name: 0xCCB30 hooked -- raised in his
+    context it is his, shown on his side; a retail hero's own name for
+    the move (the game's table), a guest's from heroes.c. The old check
+    waited for the shown flag, which comes a tick later, and missed all.
+  - (test) TT_VS_TESTROUND, TT_COOP_P2NAMETEST.
+twotowers/src/heroes.c
+  - Saruman is Versus-only again (the carousel back to seven).
+  - The Uruk-hai is the Berserker: his name, his name picture
+    (tools/names), Versus' list and his upgrade names.
+  - Retargeted falls and hits keep his lowest point at half the hero's
+    height over the floor (rt_ground_fix, TT_RT_GROUNDK, TT_RT_NOGROUND):
+    Lurtz lay flat in the air (lowest bone 3.7 over the floor, now 1.6).
+  - Lurtz's light attacks 45 and 74 (his 41/42 are a leap, 1.8 off the
+    ground); the captain's heavies 172 and 69 (43 left the ground), his
+    own falls (the Uruk-hai's) instead of the hero's.
+  - (test) TT_ZSCAN and TT_SLOTSCAN print how far each move leaves the
+    ground.
+
+-- 1.9.9: Troll Battle's health, results and records; Versus music; own first swings --
+twotowers/src/twotowers_manual.c
+  - Troll Battle: 4000 health (TT_VS_TROLLHP), twice Deathmatch's.
+  - Troll Battle's own results: the trolls' numbers and its records
+    (biggest smash, fastest knockout, most damage in a match; kept in
+    troll_records.txt beside the game, new ones marked NEW!).
+  - Sounds per mode: versus\round_start.wav at each round's banner (new);
+    in Troll Battle versus\troll_<name>.wav first (fight, round_start,
+    round_win, match_win), else the usual. Its results picture
+    versus\troll_results_bg.bmp first, else results_bg.bmp.
+  - Versus music started once a level load, not once a level index: the
+    second match on an arena (Amon Hen twice running) had none.
+  - (test) TT_VS_TESTROUNDP: whose fall TT_VS_TESTROUND makes.
+twotowers/src/versus.c
+  - tt_vs_play_mode_wav, the Troll Battle records (tt_troll_record).
+twotowers/src/heroes.c
+  - Slot 35, the first swing from the stance, is a light attack: the
+    guests swung Aragorn's (retargeted) before their own -- Lurtz, the
+    trolls. Lurtz without the hero's thrust ('t'): his own swings only.
+  - The ground fix at 0.3 of the hero's height (Lurtz lay 1.3 up).
+xboxrecomp-0.12.0/src/apu/apu_vp.c
+  - (test) RECOMP_APU_STREAMTEST (the streams' share), RECOMP_APU_STREAMLOG.
+
+-- 1.9.9: Lurtz on the ground --------------------------------------------------------
+twotowers/src/heroes.c
+  - rt_ground_fix measures as the game draws: the root bone's (0) moves
+    left out (the game moves the actor by them; their height is never
+    drawn), the height put on the root's child (bone 1). The hero's lowest
+    point kept over the floor in proportion (TT_RT_GROUNDK, 1): knocked
+    down, Lurtz lay 3.8 up, now 2.3 as Aragorn's 1.8 (the poses' lowest
+    bones; in game both on the ground).
+  - Lurtz's hit 21 (a stagger 3.8 back and a unit up) is his flinch 20.
+  - (test) TT_ZSCAN's noroot lines.
+twotowers/src/twotowers_manual.c
+  - (test) TT_VS_DOWNSHOT / TT_VS_DOWNSHOTMS: frames while a hero is down;
+    TT_COOP_DOWNDUMP.
+
+-- 1.9.9: Versus camera by the edges, the shield orc's shield breaks, names -----------
+twotowers/src/twotowers_manual.c
+  - Versus camera: the eye counts as inside the level over any of its
+    pathmaps (only the hero's own did); outside them all it turns round
+    the heroes (2 degrees a frame) toward a heading whose eye is inside,
+    and is drawn in to 70% at most (was down to 2 units, and it stayed:
+    the Hornburg Courtyard, the Plains of Rohan). The Courtyard on ours
+    from the start. (test) TT_VS_CAMLOG.
+  - (test) TT_VS_SHIELDBREAKTEST.
+twotowers/src/heroes.c
+  - The shield orc's shield on his own skin (12; the table still said 14,
+    from before the roster changed): it is built into his model again,
+    found in memory and folded away when it breaks.
+  - The shield orc's combo names, and the trolls' (both trolls): names
+    only, his moves are not upgraded.
+
+-- 1.9.9: player 2's bow, the whole map in Versus, hits from any side, the camera ------
+twotowers/src/heroes.c
+  - skin_p2_ranged / tt_heroes_p2_ranged: the ranged weapon a character
+    shows as player 2, as he does as player 1 -- the retail heroes their
+    own, Boromir and the other guests with a bow Aragorn's (what they draw
+    in the campaign), none for those who shoot from an empty hand or a
+    staff (Frodo, Gandalf, Sauron, Saruman, the trolls...) or hold their
+    own bow already (Lurtz). Its model and texture are brought into the
+    level with player 2's other resources.
+twotowers/src/twotowers_manual.c
+  - Player 2's ranged weapon for every character (it was Legolas, Gimli,
+    Aragorn and Isildur only): copies of the level's ranged weapons in his
+    model, or, with none in the level (player 1 Frodo or Gandalf, Versus),
+    a copy of one of player 1's weapons in it. His own copies are no longer
+    copied again ("no loader key").
+  - Player 1 a guest who shoots from an empty hand: his moves, which player
+    2 plays, took player 1's empty bow and his blade for an arrow, and
+    player 2 Legolas or Boromir aimed with nothing in his hand. His bow
+    and arrow are taken in their place; when the aim is over the bow goes
+    onto his back and his other weapon into his hand. TT_COOP_NOP2BOWSUB.
+  - Versus: every sector of the level drawn (the flag at 0x3C35C8 and an
+    all-shown array at 0x3C35CC, as a level without portals): the parts the
+    campaign's scripts open were never drawn, the ground ended in a brown
+    void (Amon Hen). TT_VS_KEEPSECTORS.
+  - Versus: the level's props (type 7: the campaign's barriers, a trunk
+    across Amon Hen's path) out of the collision world as
+    @ObjectCollisionOff does (0xC67B0 on 0x43C5E8). TT_VS_KEEPPROPS.
+    Amon Hen's 50-unit arena edge is gone.
+  - Player 2's ammo icon and the Versus results picture: their texture
+    object in the same block as the pixels -- alone it could come back at
+    0x80000000 (physical 0) and the icon was drawn black (player 1 Isildur).
+  - Versus hits: a swing lands on a hero within its reach on any side --
+    the game's own facing test (a hit only in front) is no longer the
+    judge (TT_VS_OLDJUDGE). Reach by size: 3.6, the Berserker, the captain,
+    Lurtz and Sauron 4.2, the trolls 5.5 (TT_VS_REACH).
+  - Versus camera: no longer drawn in at the map's edges, it stays out
+    (the Plains of Rohan; TT_VS_CAMSHRINK: as before).
+  - (test) TT_VS_POSLOG, TT_VS_GLIDE, TT_VS_SHOTS (TT_VS_SHOTSMS, _SHOTSN),
+    TT_VS_WALKTO (player 1 walked along a route over the pathmaps),
+    TT_VS_CAMP1, TT_OBJNEAR / TT_OBJDUMP, TT_WALKGRID, TT_COOP_TAKELOGN.
+twotowers/src/menus.c
+  - (test) TT_TPANY, TT_P1POSLOG, player 1's stick for TT_VS_WALKTO.
+
+-- 1.9.9: Amon Hen walkable from start to finish in Versus -----------------------
+twotowers/src/twotowers_manual.c
+  - Versus: the seams between pathmaps opened. A hero walks only on his
+    pathmap's open cells (state 3 is a wall) and every pathmap is walled at
+    its own edge; the campaign moves its heroes on from one to the next with
+    its story. Where two pathmaps meet a hero stood at an invisible wall
+    (Amon Hen past the start's forest, by the river). A cell walled in one
+    pathmap and open in another over the same ground is opened, once a level
+    (874 cells in Amon Hen). TT_VS_KEEPSEAMS. A walk test now goes from the
+    start through the forest, the ravine's far side and the river path to
+    the level's end.
+  - Versus gates: Lurtz's ruins (Amon Hen's pathmap 14) are walled in all
+    round and the campaign takes its heroes there with the level's own
+    teleport (playerTeleportObj, its record's +0x28). Walking into the end of
+    the river path (564 -377) takes both heroes into the ruins; the ruins'
+    east wall (282 -398) takes them back. TT_VS_NOGATES.
+  - Versus falls: a hero is off the map only below the level's lowest ground
+    there (the lowest of the pathmaps over him, 12 under; vs_floor) -- a long
+    drop onto lower ground no longer puts him back. A kick down off a ledge
+    still wins the round.
+  - The step through walls held against (vs_unstick) is off by default
+    (TT_VS_UNSTICK): past them lay the voids between the level's pieces.
+  - (test) TT_VS_TOPCAM (frames from straight above, tile by tile),
+    TT_RECDUMP (placement records by name), TT_WALKCAMPAIGN, TT_SETPOSLOG,
+    TT_WORLDDUMP; the walk test (TT_VS_WALKTO) steps round obstacles and
+    reroutes after a fall.
+  - Fix: entering Amon Hen in Versus crashed on Windows. The seams' walk took
+    every pointer in the level's pathmap list, and past the level's own the
+    list can hold leftovers -- one with a size of millions sent the walk out
+    of memory (Linux reads that memory without a fault). vs_pm_ok checks a
+    pathmap as the camera's list does, for the seams, vs_floor and the walk
+    tests; the neighbour's cell is bounds-checked before it is read.
+
+-- 1.9.9: random starts, the Ent, breakables back, walls by every pathmap ------------
+twotowers/src/twotowers_manual.c
+  - The level's props keep their collision again (they are its breakables:
+    with it off no blow broke the logs and barrels). TT_VS_PROPSOFF: off.
+  - Every sector drawn at once only on Amon Hen (TT_VS_ALLSECTORS: all):
+    on Westfold it lost the ground and player 1 (the Plains of Rohan
+    playtest's missing player 1).
+  - Pathmap walls: no longer all opened. Opened where another pathmap goes
+    on (the seams, as before) and in thin walls -- 1 to 3 cells with open
+    ground on both sides (TT_VS_KEEPTHIN). The map's edge stays, now for
+    both heroes: a step onto ground no pathmap has open is undone
+    (vs_union_walk; player 2 was held by none and walked off the map),
+    except for a hero just knocked flying (a kick off a ledge still wins).
+  - Random starts: each match begins at one of the level's own points on
+    open ground (its waypoints' and spawners' placement records), player 2
+    beside player 1; every later round goes on where they stand, on every
+    arena (TT_VS_FIXEDSTART, TT_VS_RESETSPOTS: as before). A hero set
+    somewhere takes that spot's pathmap (tt_vs_set_pm).
+  - The Ent hits as far as the trolls (5.5).
+twotowers/src/heroes.c
+  - The Ent (Treebeard, Fangorn Forest's TreebeardObj: mesh 4B2413DE, set
+    F0B6229A, texture 7DED492E, 41 bones mapped onto Aragorn's by
+    tools/rig/chain.py): his own stance and walk (his set has four motions),
+    the hero's swings, parry, kick, throw and falls fitted to him, bare
+    hands (no props drawn); as player 2 his throw is the troll's log. N_EXTRA 16.
+twotowers/src/options.c
+  - The Ent in the Versus list, and beside the cave troll in Troll Battle.
+
+-- 1.9.9: enemies in Versus, Troll Battle's own end, Perfect glow for player 2 --------
+twotowers/src/twotowers_manual.c
+  - Versus with enemies: on Amon Hen, Fangorn, the Plains of Rohan and the
+    Breached Wall (Deathmatch, not Troll Battle) a few of the level's own
+    orcs and Uruk-hai are made (vs_keep_enemy: by chance, at most
+    TT_VS_NENEMY 8; no archers, no named leaders), then spread over the map
+    in pairs at the level's points, away from the heroes. They fight both
+    heroes with their own sounds and die as in the campaign. Their blows
+    are told from the other hero's (an enemy's attack box within 3 s and 12
+    units, the other not swinging close by) and do a player's damage
+    (TT_VS_FOEDMG, 60); they count for neither player's numbers, and an
+    enemy's knock back off a ledge gives the other no round. The heroes
+    lock onto an enemy nearer than the other hero while they fight.
+    TT_VS_NOENEMIES: off.
+  - Fix: the placement record table was never emptied. After a few matches
+    it was full: a new level's records were not noted -- player 2 had none
+    of his own weapons and the random starts found no points (the Plains of
+    Rohan playtest) -- and old levels' records gave starts in the void.
+    Each level's records are now apart (coop_reckey_lv0); a full table
+    drops the earlier levels'.
+  - Random starts: only points on a pathmap's ground (not Fangorn's
+    spawners up in the trees) and inside the level's sectors. Every sector
+    is drawn on Fangorn and the Gates of Moria as on Amon Hen: a start past
+    the first sectors showed only the sky.
+  - The round's loser, if he was down, goes on at one of the level's own
+    points about 42 units from the winner (tt_vs_spot_from); set apart along
+    a line he could land on a ledge with no way back (Balin's Tomb).
+    Player 2 steps through a wall he is held against (vs_unstick, now on for
+    him; player 1's with TT_VS_UNSTICK), back if there is no ground there.
+  - Co-op: player 2's Perfect glow -- the gauge's glow (list 1, 7-9),
+    mirrored onto his gauge and pulsing while his Perfect time runs; the
+    game showed it only on player 1's. TT_COOP_NOP2GLOW: off.
+  - Co-op: player 2's weapons drawn again after he respawns (the +0x110 draw
+    bits recorded when he falls, put back for 4 s).
+  - The Ent's blows end in the troll's ground slam; a blow's reach counts
+    the other's bulk (2.5 for the trolls and the Ent): blows at his side or
+    back land.
+  - Troll Battle's results: its own table -- club blows of swings, smashes
+    (300 or more), damage dealt and taken, throws, fastest knockout.
+  - (test) TT_VS_FOENEAR, TT_VS_FOELOG, TT_VS_SPOTLOG, TT_VS_SPOTPICK,
+    TT_VS_HITSCAN, TT_COOP_P2KILLMS, TT_PERFDIFF, TT_GLOWPROBE.
+twotowers/src/heroes.c
+  - The Ent throws rocks (projectile 10), as player 1 and as player 2; his
+    own special move names.
+twotowers/src/options.c
+  - Troll Battle is the cave troll's only; the Ent is a Deathmatch hero.
+    Both players may pick the same hero.
+twotowers/src/versus.c
+  - The Ent's voice: Fangorn's Ent moans (S_WB_14FANG2.xwb, Ent_01-03) for
+    his blows taken and his fall.
+versus\ (the player's own files)
+  - troll_results_bg.bmp, troll_fight.wav, troll_match_win.wav for Troll
+    Battle; round_win.wav, the horn, at each round's end.
+
+-- 1.9.9: the Ent's blows land, Hornburg's starts and enemies, Balin's Tomb kept to its floor --
+twotowers/src/twotowers_manual.c
+  - The Ent's blows: his hands hold props of no triangles that the game
+    never places -- they stayed at the level's origin, and his attack
+    boxes' tests ran there: no orc hit, nothing broken. They are placed at
+    his reach each frame, swept side to side across the front of him and
+    turned as he is (tt_vs_ent_hands; the box's own weapon noted at 0xBA020).
+    Player 1 or 2, he now hits and fells the enemies. TT_VS_NOENTHANDS: off.
+  - A hero's attack box keeps its own 0x01000000 bit beside the Versus mask.
+  - Random starts on the Hornburg Courtyard: it has no waypoints or
+    spawners -- its BattlePoints and Enemy_Waypoints are taken (it always
+    began at the level's start). A sector test that finds no sector with a
+    box lets every point through; "Default" counts (Balin's Tomb's hall).
+  - Enemies on the Hornburg Courtyard too.
+  - An arena with enemies keeps its own sound banks and plays its own music:
+    with another level's banks in their place the orcs were silent.
+  - Balin's Tomb: starts on the hall's floor only (no ledge or catwalk), the
+    heroes 16 units apart (vs_spacing); player 2 at the match's start, and
+    a downed hero after a round, at one of the level's own points.
+
+-- 1.9.9: Versus achievements, notes that say why, the PS3 pad on Linux, the camera round big heroes --
+twotowers/src/achieve.c
+  - 25 more achievements for Versus: Troll Battle (1, 3 and 10 matches won,
+    a match without a round lost, a 400 smash, 25,000 damage in all, a round
+    in under 20 s, 25 rocks or logs landed), the levels' enemies (25 and 150
+    slain, a Deathmatch won on all five enemy arenas), 3 matches won as each
+    of Saruman, the Ent, the Uruk Captain, the Elven Warrior, Lurtz, Sauron,
+    Gandalf, Elrond, Boromir, Frodo and the Berserker, the Ent's 20 rocks,
+    and a mirror match of first to 5. Counted across sessions in
+    achievements.txt (count lines; N_CNT 64).
+  - An earned achievement's note shows its description under its name.
+xboxrecomp-0.12.0/src/video/gfx_menu.c
+  - xbox_ToastShow3: a note with a third, wrapped line (up to 3 lines), 7 s.
+xboxrecomp-0.12.0/src/input/xinput_device.c
+  - Linux: a DualShock 3 is read through the kernel's driver (hid-sony,
+    evdev), SDL's default there; forced onto SDL's HIDAPI driver it was found
+    and named but sent nothing when its hidraw node was readable (GitHub
+    issue 14). TT_PS3_HIDAPI=1: the HIDAPI driver all the same.
+twotowers/src/twotowers_manual.c
+  - Versus camera: with the Ent or a troll in the match, the eye 9 units
+    further back and 6 higher -- the Ent's trunk filled the screen between
+    it and the other hero (TT_VS_BIGCAM=0: off). The camera's own distance
+    (+0/+4) held at its most this level (TT_VS_CAMKEEPDIST).
+  - Enemies slain in Versus counted for the nearer hero; Troll Battle's and
+    the heroes' match wins, round times and hits reported to the
+    achievements.
+  - (test) TT_ACH_TEST, TT_TOASTDUMP, TT_VS_CAMDUMP, TT_GLOWPROBE.
+twotowers/src/twotowers_manual.c
+  - Co-op: player 2's arrows and throws hit the Watcher. The projectile step
+    (0xDAD20) tests the fight's list of targets (0x43B0E8,
+    @ForcePlayerWeaponObbTestOn) only for projectiles owned by [0x43B15C],
+    player 1; one of player 2's is stepped in his context, so the test runs
+    for it too (TT_COOP_NOP2PROJLIST: as before).
+  - Co-op: player 2 held where he stands (the Gates of Moria's lake: wading,
+    held by the water's unseen wall) -- the stick pushed, under 0.4 units
+    moved in 2 s and over 6 units from player 1 -- is put beside player 1,
+    whatever the P2 Teleport setting (TT_COOP_NOSTUCKPUT: off).
+  - Versus, Mount Doom: the whole arena is playable, over the lava and on its
+    far side. The pathmap's walls inside the map are opened; a hero held at
+    the lava's edge while pushing on is carried over it at a walk, level
+    with the bank (his collision step skipped meanwhile, sub_000B9530); a
+    hero dropping into a pit is held at the height he stood at and can walk
+    on or out; the game takes him back once the ground holds him
+    (TT_VS_DOOMKEEP: as before; TT_VS_DOOMSPD, TT_VS_DOOMLOG). Spawn points
+    on the far side are used; those right at the lava's edge are not
+    (TT_VS_DOOMANY: all points).
+  - (test) TT_VS_PMDUMP: each pathmap's cells as a PGM.
+twotowers/src/twotowers_manual.c, versus.c, menus.c
+  - Versus, Mount Doom: player 2 is carried over the lava too. He never goes
+    through sub_000B9530: his own step (0x843F0) and the game's SetPosition
+    on him (from 0xBD609) are undone in tt_coop_leave while he is carried,
+    and he is set where the carry put him; vs_unstick is off there (it put
+    him back where he began pushing); the open ground ahead is read from
+    the pathmap's own cells (the overlay at 0x418C00 marks the cells round a
+    character, a troll's included).
+  - Versus music: Fangorn's and Weathertop's tracks are no longer drawn for
+    other arenas -- long quiet stretches (Fangorn's 14F2ALT1 about 20 s at a
+    time) left Mount Doom without music. (test) TT_VS_MUSIDX, TT_VS_MUSDUMP.
+  - Versus: player 1's controller port is held for the match (taken at the
+    first FIGHT, put back if it changes in his context): in a Troll Battle
+    from round 2 on player 1 could not steer, moving with player 2's stick
+    (TT_VS_NOPORTHOLD: off). (test) TT_VS_P1MOVELOG.
+  - New Game's difficulty screen: Easy, Normal and Expert answer the mouse
+    (pointed at: the cursor; clicked: chosen), not only Impossible.
+xboxrecomp-0.12.0/src/input/xinput_device.c
+  - The movement keys held unchanged for over 4 s are logged every 5 s
+    ([INPUT] movement keys held ...), each with where it is seen held (the
+    keyboard itself, or only the window's record) and which window is in
+    front -- for a playtest's player 1 who moved one way whatever he pressed.
+xboxrecomp-0.12.0/src/video/fb_present.c
+  - Every key (not the mouse buttons) let go as the window is activated,
+    deactivated or gets the keyboard back, besides losing it (WM_KILLFOCUS).
+twotowers/src/options.c
+  - Troll Battle's arenas: Balin's Tomb and Amon Hen (Mount Doom taken out).
+twotowers/src/twotowers_manual.c, xboxrecomp-0.12.0/src/input/xinput_device.c
+  - Versus: player 1 pushing the stick and not moving for 2 s is logged
+    ([VS] player 1 held at ...: his state, his stick as the game reads it,
+    the last caller of SetPosition on him) -- for the Troll Battle's player
+    1 held on one spot. (test) TT_VS_PMNEAR.
+  - The held-movement-keys log only after 4 s (its start time had made it
+    log at once).
+twotowers/src/twotowers_manual.c
+  - Co-op: player 2 held where he stands is put beside player 1 only with
+    the Co-op menu's P2 Teleport on (with it off, no teleport at all).
+twotowers/src/main.c
+  - A crash report gives the program's start and the crash's offset from it,
+    and the native return addresses as offsets (the program loads somewhere
+    else each run; the old check looked for the fixed 0x140000000 only).
+twotowers/src/twotowers_manual.c, menus.c
+  - The level's pathmap list read only through addresses the game's memory
+    has (coop_va_ok: its 64 MB, or the contiguous window at 0x80000000):
+    past its own entries the list holds leftovers, and one at 0x76EA0xxx --
+    let through by the old "under 0x84000000" check -- crashed the game in
+    a Troll Battle on Balin's Tomb (vs_floor, a playtest's crash log).
+twotowers/src/twotowers_manual.c, menus.c
+  - Versus, the Plains of Rohan: starts only on the start's open field (its
+    Sector_01, south of the village's overlapping Sector_02), with 8 units
+    of open ground round them (vs_clearance), and points of our own every 8
+    units there besides the level's few; the round's loser set by the winner
+    as before. A hero set down in the village's sectors was not drawn (the
+    level draws its characters by the sector they came into), or stood
+    under a roof or behind a wall. TT_VS_ROHANANY, TT_VS_CLEAR.
+  - Versus bot: after each blow that lands, 1.8 s (2.6 s in a Troll Battle)
+    before it swings again, stepping back meanwhile -- swinging in its beats
+    it kept player 1 stunned on one spot (TT_VS_BOTNOREST: as before).
+  - Versus camera on the Hornburg Courtyard: the eye must see the heroes --
+    no walled cell between it on the pathmaps (vs_eye_sees); its pathmaps
+    reach past the walls, and an eye behind the south wall was drawn in by
+    the game and stayed close (TT_VS_CAMLOS: 1 every arena, 0 off).
+  - Versus pause menu: Restart Match -- a note at the top while paused;
+    BACK (Backspace / Tab) or a click on it starts the match again from
+    round 1 (scores 0, both whole at the match's starting spots) and closes
+    the pause. TT_VS_NORESTART: off.
+twotowers/src/twotowers_manual.c
+  - Versus camera: the camera's second look-at and eye (+0x64..+0x6C,
+    +0x74..+0x7C, the game's own after its wall test) set to ours each frame
+    -- on the Hornburg Courtyard the game drew its eye in to a wall and the
+    view stayed close while ours was far (TT_VS_CAMNOCOPY: as before).
+  - Restart Match: a new random start, as a new match's.
+  - Versus pause menu: Restart Round -- a second line under Restart Match;
+    Y (the I key) or a click on it plays the round again (the score kept; a
+    round already won stays won, the next one starts).
+twotowers/src/heroes.c
+  - Hero names longer than "Isildur" in full: the Berserker read "Berserk"
+    on the character select and the level map. The string table's entry is
+    pointed at a longer slot (the room of a string the table holds twice,
+    whose twin then reads the first copy). TT_NAMESHORT: as before.
+twotowers/src/twotowers_manual.c
+  - Versus, falling off the map: a hero put back and falling again is put
+    beside the other only while the other stands on ground; otherwise (or a
+    third fall in a row) where he began the round. On the Hornburg
+    Courtyard's south-east edge both heroes went off, each was put beside
+    the other below the floor, and the two sank through the world with the
+    camera following -- the view "zoomed in" to the flagstones and stayed
+    (TT_VS_OLDBACK: as before).
+  - Versus camera: a falling hero counts at the height of his last ground,
+    so the view no longer sinks under the floor with him (TT_VS_CAMFALL: as
+    before).
+  - Versus, Hornburg Courtyard zoom (the real cause): crossing the level's
+    camera plane trigPlane_camera_Courtyard1 on the west side handed the
+    camera the level's own close view (a 13-degree lens), and nothing handed
+    it back -- the picture stayed zoomed in through restarts until the game
+    was left. The level's camera planes are left alone there now (the camera
+    is ours) (TT_VS_CAMPLANES: as before).
+  - Versus, Hornburg Courtyard: the yard's one-cell outer walls are no
+    longer opened as "thin walls" -- the heroes walked out through the west
+    wall into the stone and fell (TT_VS_THIN11: as before).
+  - Versus camera on the Hornburg Courtyard: its line-of-sight test counts
+    only the ground at the heroes' height, so the eye no longer sits inside
+    the ramparts that overhang the yard (TT_VS_CAMLOSFLAT: as before).
+  - Versus with enemies: an enemy's blow before the round begins (the
+    countdown, between rounds) hits no one (TT_VS_FOEPREROUND: as before).
+  - Co-op: no leash while player 1 is down -- player 2 goes anywhere until
+    he is back (TT_COOP_LEASHDOWN: as before).
+  - Versus pause menu: Restart Round picks a new random start too, as
+    Restart Match does (the score kept).
+  - Co-op: player 2 takes any pickup he walks over when he needs it --
+    the level's own (the arrows by Balin's Tomb's cave troll) came only
+    for player 1 (TT_COOP_NOP2PLACED: as before).
+  - Co-op: the leash 28 units (was 20): a little more room for player 2.
+  - Versus: the round's pickups are put out at "FIGHT!", where the players
+    stand -- put out as the round began they hung over the ground (the
+    players are dropped in from above), out of everyone's reach.
+  - Co-op: no leash -- player 2 roams as he does while player 1 is down
+    (TT_COOP_LEASH=units: one again). Far apart (past 30 units) the camera
+    goes over to player 1; P2 Teleport (on) still brings player 2 back
+    past 42 units.
+  - Co-op pause menu: a note at the top turns P2 Teleport on or off -- Y
+    (the I key) or a click on it -- without going to the settings
+    (TT_COOP_NOTELEKEY: none).
+  - Co-op: player 2's hits damage every object player 1's do -- boxes,
+    Fangorn's log, the Breached Wall's catapult, the enemies' shields (0x91920
+    takes his role's hit wherever it takes the player's, not only on the
+    props) (TT_COOP_P2PROPONLY: the props only, as in 1.9.8).
+  - Co-op HUD: a boss bar of another shape (the Breached Wall's catapult)
+    is moved under player 2's bar whole -- half of it stayed on his bar. A
+    top-right list's top pieces move together (TT_COOP_ALLYRIGHTONLY: as
+    before).

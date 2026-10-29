@@ -480,7 +480,16 @@ static DWORD WINAPI sp_thread(LPVOID arg)
      * or DualSense on Bluetooth needs the extended reports for that). */
     p_SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS4_RUMBLE", "1");
     p_SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5_RUMBLE", "1");
+#if defined(_WIN32) || defined(__APPLE__)
     p_SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS3", "1");
+#else
+    /* Linux: a DualShock 3 through the kernel's own driver (hid-sony, evdev),
+     * as SDL does by default there. Forced onto SDL's HIDAPI driver it was
+     * found and named, but on a system whose hidraw node is readable (a udev
+     * rule) no report ever came: the kernel driver holds the pad (GitHub
+     * issue 14). TT_PS3_HIDAPI=1: SDL's HIDAPI driver all the same */
+    p_SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS3", getenv("TT_PS3_HIDAPI") ? getenv("TT_PS3_HIDAPI") : "0");
+#endif
     p_SDL_SetHint("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1");
 #if defined(_WIN32)
     /* Xbox pads are XInput's; SDL must not report them a second time */
@@ -908,8 +917,16 @@ static BOOL key_down(int vk)
 {
     HWND fg;
     int ours;
-    static volatile int async_works;          /* GetAsyncKeyState has reported a key */
+    static volatile int async_works = -1;     /* GetAsyncKeyState has reported a key (or this is Windows itself) */
     static DWORD stale_since[256];
+    if (async_works < 0) {   /* (1.9.9) on Windows itself the keyboard can always be read: a key held by the window's
+                              * messages alone is a lost release from the start -- the Enter that launched the game stayed
+                              * "held" as Start, so the controller's Start never paused and the menus kept choosing (a
+                              * playtest; only an Alt press, which proved the keyboard readable, let it go). Under Wine,
+                              * GetAsyncKeyState reads nothing: there only after it has shown a key, as before */
+        HMODULE nt = GetModuleHandleA("ntdll.dll");
+        async_works = (nt && GetProcAddress(nt, "wine_get_version")) ? 0 : 1;
+    }
     /* Alt+Enter toggles full screen; it is not Start. */
     if (vk == VK_RETURN && (GetAsyncKeyState(VK_MENU) & 0x8000)) return FALSE;
     fg = GetForegroundWindow();
@@ -1207,6 +1224,30 @@ static void keyboard_state(XBOX_INPUT_STATE *pState)
     }
     pState->Gamepad.sThumbLX = (SHORT)lx;
     pState->Gamepad.sThumbLY = (SHORT)ly;
+#if defined(_WIN32)
+    {   /* (1.9.9) the movement keys held a long while, logged once every 5 s with where each held key is seen: the keyboard
+         * itself (GetAsyncKeyState) or only the window's record -- a playtest's player 1 moved one way whatever was pressed,
+         * after an Alt+Tab; this tells a key stuck held from another program pressing it (a controller mapper's WASD) */
+        static DWORD since, logged; static int lx0, ly0; DWORD now = GetTickCount();
+        if ((lx || ly) && lx == lx0 && ly == ly0) {
+            if (!since) since = now ? now : 1;
+            else if ((int)(now - since) > 4000 && (int)(now - logged) > 5000) { static int n; int a2, k;
+                logged = now;
+                if (n++ < 40) {
+                    char b[300]; int q = 0; static const int mv[4] = { BIND_MOVE_LEFT, BIND_MOVE_RIGHT, BIND_MOVE_UP, BIND_MOVE_DOWN };
+                    for (a2 = 0; a2 < 4; a2++) for (k = 0; k < BIND_KEYS; k++) { int vk = xbox_BindKey(mv[a2], k);
+                        if (vk && key_down(vk) && q < 280) q += snprintf(b + q, sizeof b - q, " %02X(%s%s)", vk, (GetAsyncKeyState(vk) & 0x8000) ? "keyboard" : "", xbox_FramebufferKeyDown(vk) ? " window" : ""); }
+                    b[q] = 0;
+                    { HWND fg = GetForegroundWindow(); DWORD pid = 0; if (fg) GetWindowThreadProcessId(fg, &pid);
+                      fprintf(stderr, "  [INPUT] movement keys held %lu s, the stick %d,%d:%s | in front: %s\n", (unsigned long)((now - since) / 1000u), lx, ly, b,
+                              fg == (HWND)xbox_FramebufferHwnd() ? "the game window" : pid == GetCurrentProcessId() ? "a window of ours" : "another program"); }
+                    fflush(stderr);
+                }
+            }
+        } else since = 0;
+        lx0 = lx; ly0 = ly;
+    }
+#endif
     pState->Gamepad.sThumbRX = act_axis(BIND_LOOK_LEFT, BIND_LOOK_RIGHT);
     pState->Gamepad.sThumbRY = act_axis(BIND_LOOK_DOWN, BIND_LOOK_UP);
 

@@ -1341,7 +1341,7 @@ static void p1_script(XState *st)
         else if (!strcmp(c, "START")) st->Gamepad.wButtons |= PAD_START; else if (!strcmp(c, "BACK")) st->Gamepad.wButtons |= 0x20;
         else if (!strcmp(c, "UP")) st->Gamepad.wButtons |= PAD_UP; else if (!strcmp(c, "DOWN")) st->Gamepad.wButtons |= PAD_DOWN;
         else if (!strcmp(c, "LEFT")) st->Gamepad.wButtons |= PAD_LEFT; else if (!strcmp(c, "RIGHT")) st->Gamepad.wButtons |= PAD_RIGHT;
-        else if (!strcmp(c, "LUP")) st->Gamepad.sThumbLY = 32767; else if (!strcmp(c, "LDOWN")) st->Gamepad.sThumbLY = -32767;
+        else if (!strcmp(c, "LUP")) st->Gamepad.sThumbLY = 32767; else if (!strncmp(c, "LY=", 3)) st->Gamepad.sThumbLY = (int16_t)atoi(c + 3);   /* (test: a part push, a walk) */ else if (!strcmp(c, "LDOWN")) st->Gamepad.sThumbLY = -32767;
         else if (!strcmp(c, "LLEFT")) st->Gamepad.sThumbLX = -32767; else if (!strcmp(c, "LRIGHT")) st->Gamepad.sThumbLX = 32767;
         else if (!strcmp(c, "RUP")) st->Gamepad.sThumbRY = 32767; else if (!strcmp(c, "RDOWN")) st->Gamepad.sThumbRY = -32767;   /* (the right stick: the aim's pitch) */
         else if (!strcmp(c, "SHOT")) {   /* a frame dump: <smoke dir from TT_P1SCRIPT_SHOTDIR>\p1s_<from>.bmp, once */
@@ -1424,6 +1424,77 @@ static void imp_screen(XState *st)
 }
 volatile int tt_in_hle;
 static int s_pad_merging;   /* (the co-op pages' merge reads the other ports: those reads are left raw) */
+/* (1.9.9) Versus' pause menu: Restart Match. The game's pause list is pictures of its words (the BFF files), so a line of our own
+ * shows above it while the game is paused ([0x4AD054] +0x4DDC): BACK (Backspace or Tab) or a click on it restarts the match from
+ * its first round (twotowers_manual.c, tt_vs_restart_req) and Start, pressed for the player, takes the pause away */
+volatile int tt_vs_restart_req;
+static int s_vs_unpause;   /* (polls of player 1's pad left with Start pressed for him: the pause list closed) */
+static int vs_paused_now(void)
+{
+    extern int tt_vs_on(void); uint32_t pl = G32(0x4AD054u);
+    return tt_vs_on() && G32(0x4AD050u) == 6 && pl >= 0x10000u && pl < 0x04000000u && (G32(pl + 0x4DDCu) & 0xFFu) != 0;
+}
+static void vs_restart_ask(int round, const char *how)   /* (tt_vs_restart_req: 1 the match, 2 the round) */
+{
+    if (tt_vs_restart_req) return;
+    tt_vs_restart_req = round ? 2 : 1; s_vs_unpause = 6;
+    tt_dbg("[VSMENU] Restart %s (%s)\n", round ? "Round" : "Match", how);
+}
+static void vs_pause_restart_tick(void)
+{
+    extern void xbox_BannerSet(const char *title, const char *line); static int shown;
+    int p = vs_paused_now() && !getenv("TT_VS_NORESTART");
+    if (p && !shown) { xbox_BannerSet("Restart Match: BACK (Backspace / Tab) or click", "Restart Round: Y (the I key) or click this line"); shown = 1; }
+    else if (!p && shown) { xbox_BannerSet("", ""); shown = 0; }
+}
+/* (1.9.9) co-op's pause: P2 Teleport (the Co-op Options' catch-up) on or off from a note at the top -- Y (the I key) or a click on
+ * it -- without going to the settings, for a player 2 stuck somewhere (a playtest). TT_COOP_NOTELEKEY: none */
+static int coop_paused_now(void)
+{
+    extern int tt_vs_on(void); extern int tt_coop_active(void); uint32_t pl = G32(0x4AD054u);
+    return tt_coop_active() && !tt_vs_on() && G32(0x4AD050u) == 6 && pl >= 0x10000u && pl < 0x04000000u && (G32(pl + 0x4DDCu) & 0xFFu) != 0 && !getenv("TT_COOP_NOTELEKEY");
+}
+static int s_coop_tele_shown = -1;
+static void coop_tele_toggle(const char *how)
+{
+    extern int tt_coop_setting(int i); extern void tt_coop_setting_set(int i, int v); extern void tt_opt_move_sound(void);
+    int v = !tt_coop_setting(3);
+    tt_coop_setting_set(3, v); tt_opt_move_sound(); s_coop_tele_shown = -1;
+    tt_dbg("[COOPMENU] P2 Teleport %s (%s)\n", v ? "on" : "off", how);
+}
+static void coop_pause_tele_tick(void)
+{
+    extern void xbox_BannerSet(const char *title, const char *line); extern int tt_coop_setting(int i);
+    int p = coop_paused_now(), v = tt_coop_setting(3);
+    if (p && s_coop_tele_shown != v) { xbox_BannerSet(v ? "P2 Teleport: ON" : "P2 Teleport: OFF", v ? "Turn it off: Y (the I key) or click this note" : "Turn it on: Y (the I key) or click this note"); s_coop_tele_shown = v; }
+    else if (!p && s_coop_tele_shown >= 0) { xbox_BannerSet("", ""); s_coop_tele_shown = -1; }
+}
+static void coop_pause_tele_pad(unsigned long port, XState *st)
+{
+    static int prevy[4];
+    if (port >= 4) return;
+    if (coop_paused_now()) {
+        int y = st->Gamepad.bAnalogButtons[3] > 30;
+        if (y && !prevy[port]) coop_tele_toggle("Y");
+        prevy[port] = y; st->Gamepad.bAnalogButtons[3] = 0;
+    } else prevy[port] = st->Gamepad.bAnalogButtons[3] > 30;
+}
+static void vs_pause_restart_pad(unsigned long port, XState *st)
+{
+    static WORD prevb[4];
+    if (port >= 4) return;
+    if (s_vs_unpause > 0 && (port == G32(0x1CB8B4u) || G32(0x1CB8B4u) > 3u)) {   /* (Start for a few polls, then let go: one press) */
+        if (s_vs_unpause > 3 && vs_paused_now()) st->Gamepad.wButtons |= PAD_START; else st->Gamepad.wButtons &= (WORD)~PAD_START;
+        st->dwPacketNumber += 0x10000u * (DWORD)s_vs_unpause; s_vs_unpause--;
+    }
+    if (vs_paused_now() && !getenv("TT_VS_NORESTART")) {
+        WORD b = st->Gamepad.wButtons;
+        if ((b & 0x0020u) && !(prevb[port] & 0x0020u)) vs_restart_ask(0, "BACK");
+        if (st->Gamepad.bAnalogButtons[3] > 30 && !(prevb[port] & 0x8000u)) vs_restart_ask(1, "Y");
+        prevb[port] = (WORD)(b | (st->Gamepad.bAnalogButtons[3] > 30 ? 0x8000u : 0u));
+        st->Gamepad.wButtons &= (WORD)~0x0020u; st->Gamepad.bAnalogButtons[3] = 0;
+    } else prevb[port] = st->Gamepad.wButtons;
+}
 static void pad_filter(unsigned long port, XState *st)
 {
     if (s_pad_merging) return;
@@ -1437,6 +1508,12 @@ static void pad_filter(unsigned long port, XState *st)
     uint32_t prim = G32(0x1CB8B4u), inj = s_inj;
     if (getenv("TT_P1SCRIPT_INPLAY") && (G32(0x4AD050u) == 6 || G32(0x4AD050u) == 8)) { static int n; if (n++ < 6) tt_dbg("[P1SCRIPT] in play: pad port %lu, primary %u\n", port, prim); }
     if (getenv("TT_P1SCRIPT") && port < 4 && (!(G32(0x4AD050u) == 6 || G32(0x4AD050u) == 8) || (getenv("TT_P1SCRIPT_INPLAY") && (port == 0 || port == G32(0x1CB8B4u))))) p1_script(st);   /* (the menus listen to any pad; in play, co-op's own pads -- TT_P1SCRIPT_INPLAY: player 1's port too) */
+    vs_pause_restart_pad(port, st);
+    coop_pause_tele_pad(port, st);
+    {   /* (test) player 1's stick from twotowers_manual.c's walk-to (TT_VS_WALKTO) */
+        extern volatile int tt_p1_autostick_on; extern volatile int16_t tt_p1_autostick[2];
+        if (tt_p1_autostick_on && port < 4 && (port == 0 || port == G32(0x1CB8B4u)) && (G32(0x4AD050u) == 6 || G32(0x4AD050u) == 8)) { st->Gamepad.sThumbLX = tt_p1_autostick[0]; st->Gamepad.sThumbLY = tt_p1_autostick[1]; st->dwPacketNumber += 0x10000u; }
+    }
     if (port < 4 && (port == 0 || port == G32(0x1CB8B4u))) imp_screen(st);
     if (port == 0 || port == G32(0x1CB8B4u)) s_polls++;
     if (prim > 3) prim = 0;
@@ -1626,6 +1703,8 @@ static void pad_filter(unsigned long port, XState *st)
         extern void tt_opt_filter(unsigned long port, XState *st);
         tt_opt_filter(port, st);
     }
+    { extern void tt_hero_size_filter(unsigned long port,void *state);
+      tt_hero_size_filter(port,st); }
 }
 
 
@@ -2158,6 +2237,10 @@ static void pointer_frame(void)
             return;
         }
     }
+    if (clk && s_shown && inside && vs_paused_now() && !getenv("TT_VS_NORESTART") && s_gy >= 16.0f && s_gy < 100.0f && s_gx >= 120.0f && s_gx < 520.0f) {   /* (1.9.9) the restart note at the top: its title the match, its line the round */
+        go_clear(); vs_restart_ask(s_gy >= 58.0f, "click"); return; }
+    if (clk && s_shown && inside && coop_paused_now() && s_gy >= 16.0f && s_gy < 100.0f && s_gx >= 120.0f && s_gx < 520.0f) {   /* (1.9.9) co-op's P2 Teleport note */
+        go_clear(); coop_tele_toggle("click"); return; }
     if (diff_here() && s_shown && inside && s_gy >= 396.0f && s_gy < 440.0f) {   /* (1.9.7) the difficulty row: Impossible ours */
         extern int tt_coop_setting(int i); extern void tt_coop_setting_set(int i, int v); extern void tt_opt_move_sound(void);
         int imp = tt_coop_setting(6) == 1, over = s_gx >= 460.0f && s_gx < 640.0f;
@@ -2166,7 +2249,13 @@ static void pointer_frame(void)
             if (clk) { go_clear(); press(INJ_A); tt_dbg("[MENU] difficulty: Impossible clicked\n"); }
             return;
         }
-        if (imp && s_gx >= 0.0f && s_gx < 460.0f && moved) { tt_coop_setting_set(6, 0); tt_dbg("[MENU] difficulty: pointer off Impossible\n"); }
+        if (s_gx >= 0.0f && s_gx < 460.0f) {   /* (1.9.9) Easy, Normal, Expert by the pointer too (words centred at 85, 228, 375 -- diff_layout moved them,
+            * and the game's own items no longer took the clicks there: only Impossible answered the mouse, a playtest) */
+            uint32_t k = s_gx < 156.0f ? 0u : s_gx < 301.0f ? 1u : 2u;
+            if (moved && (imp || G32(MM_OBJ + 0x18) != k)) { if (imp) tt_coop_setting_set(6, 0); G32(MM_OBJ + 0x18) = k; tt_opt_move_sound(); if (mouse_log()) tt_dbg("[MOUSE] difficulty: %u (pointer)\n", k); }
+            if (clk) { if (imp) tt_coop_setting_set(6, 0); G32(MM_OBJ + 0x18) = k; go_clear(); press(INJ_A); tt_dbg("[MENU] difficulty %u clicked\n", k); }
+            return;
+        }
     }
     {   /* our options pages: their own pointer handling (options.c) */
         extern int tt_opt_mouse(float x, float y, int moved, int clk, int down);
@@ -2443,6 +2532,25 @@ done:
 /* once a frame (twotowers_manual.c: the game's wait for the next frame) */
 void tt_menus_tick(void)
 {
+    vs_pause_restart_tick();
+    coop_pause_tele_tick();
+    if (getenv("TT_WALKCAMPAIGN") && (G32(0x4AD050u) == 6 || G32(0x4AD050u) == 8)) { extern void tt_walkto_tick(uint32_t hero, uint32_t now); static DWORD t0; if (!t0) t0 = GetTickCount(); if (GetTickCount() - t0 > (DWORD)atoi(getenv("TT_WALKCAMPAIGN"))) tt_walkto_tick(G32(0x43B15Cu), GetTickCount()); }   /* (test) */
+    if (getenv("TT_P1POSLOG")) { static DWORD tl; uint32_t p1 = G32(0x43B15Cu); if (p1 >= 0x10000u && p1 < 0x84000000u && GetTickCount() - tl > 2000u) { float x, y, z; uint32_t v; tl = GetTickCount(); v = G32(p1 + 0xF0); memcpy(&x, &v, 4); v = G32(p1 + 0xF4); memcpy(&y, &v, 4); v = G32(p1 + 0xF8); memcpy(&z, &v, 4); tt_dbg("[P1POS] %.1f %.1f %.1f pm %d\n", x, y, z, (int)G32(p1 + 0x2ECu)); } }   /* (test) */
+    if (getenv("TT_TPANY")) {   /* (testing) "x,y,z,ms[,dir]": player 1 put there ms after play starts, then a frame a second into dir */
+        static DWORD t0, tl; static int done, k; float x = 0, y = 0, z = 0; int ms = 0; char dir[200] = "";
+        uint32_t p1 = G32(0x43B15Cu);
+        if (p1 >= 0x10000u && sscanf(getenv("TT_TPANY"), "%f,%f,%f,%d,%199s", &x, &y, &z, &ms, dir) >= 4) {
+            if (!t0) t0 = GetTickCount();
+            if (!done && GetTickCount() - t0 > (DWORD)ms) { extern uint32_t tt_gcall(uint32_t va, uint32_t thisptr, int n, const uint32_t *args); uint32_t a3[3], i2;
+                memcpy(&a3[0], &x, 4); memcpy(&a3[1], &y, 4); memcpy(&a3[2], &z, 4); tt_gcall(0x000865D0u, p1, 3, a3);
+                if (!getenv("TT_TPNOPM")) for (i2 = 0; i2 < 256; i2++) { uint32_t pm = G32(0x41F428u + 0x1088u + 4u * i2);
+                    if (!((pm >= 0x10000u && pm < 0x03FFFF00u) || (pm >= 0x80000000u && pm < 0x83FFFF00u))) continue;
+                    { float x0, x1, y0, y1; uint32_t v; v = G32(pm + 0x48); memcpy(&x0, &v, 4); v = G32(pm + 0x58); memcpy(&x1, &v, 4); v = G32(pm + 0x4C); memcpy(&y0, &v, 4); v = G32(pm + 0x5C); memcpy(&y1, &v, 4);
+                      if (x >= x0 && x <= x1 && y >= y0 && y <= y1) { G32(p1 + 0x2EC) = i2; break; } } }
+                done = 1; tl = GetTickCount(); tt_dbg("[TPANY] player 1 put at %.1f %.1f %.1f\n", x, y, z); }
+            if (done && dir[0] && k < 12 && GetTickCount() - tl > 1000) { extern void xbox_PresentDumpRequest(const char *path); char pth[300]; tl = GetTickCount(); snprintf(pth, sizeof pth, "%s/tp_%02d.bmp", dir, k++); xbox_PresentDumpRequest(pth); }
+        }
+    }
     {   /* testing: TT_MMSEL -- the main menu's choice as it changes */
         static int on = -1; static uint32_t last = 0xFFFFFFFFu;
         if (on < 0) on = getenv("TT_MMSEL") != NULL;
