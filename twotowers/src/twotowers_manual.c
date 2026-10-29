@@ -5096,6 +5096,11 @@ static void coop_exp_frame(void)   /* the HUD's copy of player 2's record (his g
         if (!next) next = coop_p2_t0 + (uint32_t)atoi(getenv("TT_COOP_TESTPERF1"));
         if (coop_now() >= next) { next = coop_now() + 20000u; MEMF(coop_rec_addr + 4) = MEMF(0x175324u) + 0.5f;
             tt_dbg("[COOPEXP] test: player 1's meter set to %.1f (glow %08X; player 2's %08X)\n", MEMF(coop_rec_addr + 4), MEM32(0x43B25Cu), *(const uint32_t *)(coop_s2 + 0x48 + 0x58 + 0x5F + 0xF8 + 0x10 + 0x20 + 4 + 0x24 + 4 + 4 + 4 + 8)); } }
+    if (getenv("TT_COOP_TESTPERF2") && coop_p2_t0 && coop_rec_addr && !coop_depth && MEM32(0x43B15Cu) != coop_p2) {   /* bot test: player 2's the same (his record's copy in the context swap) */
+        static uint32_t next2; float pv = MEMF(0x175324u) + 0.5f;
+        if (!next2) next2 = coop_p2_t0 + (uint32_t)atoi(getenv("TT_COOP_TESTPERF2"));
+        if (coop_now() >= next2) { next2 = coop_now() + 20000u; memcpy(coop_s2 + 0x400 + 4, &pv, 4);
+            tt_dbg("[COOPEXP] test: player 2's meter set to %.1f (glow %08X; player 1's %08X)\n", pv, *(const uint32_t *)(coop_s2 + 0x48 + 0x58 + 0x5F + 0xF8 + 0x10 + 0x20 + 4 + 0x24 + 4 + 4 + 4 + 8), MEM32(0x43B25Cu)); } }
     extern uint32_t coop_rec_addr; extern const uint8_t *coop_p2_state(void); uint32_t j; const uint8_t *s;
     if (!coop_rec_addr || coop_mode() != 3 || coop_p2 < 0x10000u) { coop_p2rec_ok = 0; return; }
     if (!coop_p2rec_ok) { uint32_t nz = 0; for (j = 0; j < 0x348; j += 4) if (MEM32(COOP_P2REC + j)) nz++; if (nz) { static int said; if (!said++) tt_dbg("[COOPEXP] HUD copy area %08X not zero: no gauge for player 2\n", COOP_P2REC); return; } }
@@ -6593,8 +6598,20 @@ static void coop_hud_frame(void)   /* once a frame, on the game's side: what the
  * wide at full health), 16 the sword art. Ours: the same four, top right (left of Frodo's portrait), mirrored, the
  * fill from player 2's health; and a font-0 text "RESPAWN n" at the top middle while he is down.
  * TT_COOP_NOSWORD turns it off (the debug panel, TT_COOP_NOHUD, is then the fallback). */
-#define COOP_EL      0x4BA600u   /* after the E3 HUD's two (0x4BA000-0x4BA1B7) and menus.c's Exit (0x4BA400, its text 0x4BA500): at 0x4BA1C0 the main menu's Exit, drawn first, made the area look used and player 2's HUD stood down */
-#define COOP_EL_N    15   /* 0-3 sword, 4 counter, 5-10 gauge, 11-12 rating popup, 13-14 arrows; ends at 0x4BB2E4 (player 2's record copy is at 0x4BB300) */
+/* (1.9.9) in memory of our own, 19 elements (player 2's combo meter added 4; past 0x4BB2E4 the guest memory was found
+ * in use on some runs, 2026-10-19). Until 1.9.8 at 0x4BA600, after the E3 HUD's two (0x4BA000-0x4BA1B7) and menus.c's
+ * Exit (0x4BA400, its text 0x4BA500): at 0x4BA1C0 the main menu's Exit, drawn first, made the area look used and
+ * player 2's HUD stood down. There, 15, if the allocation fails; TT_COOP_OLDELMEM: there, as before */
+static uint32_t coop_el_mem;
+static uint32_t coop_el_va(void)
+{
+    extern uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment);
+    if (!coop_el_mem) { coop_el_mem = getenv("TT_COOP_OLDELMEM") ? 0 : xbox_ContiguousAlloc(19u * 0xDCu, 16u);
+        if (coop_el_mem) { uint32_t j; for (j = 0; j < 19u * 0xDCu; j += 4) MEM32(coop_el_mem + j) = 0; } else coop_el_mem = 0x4BA600u; }
+    return coop_el_mem;
+}
+#define COOP_EL      coop_el_va()
+#define COOP_EL_N    (coop_el_va() == 0x4BA600u ? 15 : 19)   /* 0-3 sword, 4 counter, 5-10 gauge, 11-12 rating popup, 13-14 arrows, 15-18 the combo meter (1.9.9) */
 #define COOP_HUD_LIST 0x1BAAE4u
 #define COOP_HUD_ON   0x4A559Cu
 #define COOP_P1SWORD  0x4A0398u
@@ -7158,6 +7175,25 @@ void tt_coop_hud_pre(void)
         MEM32(COOP_EL + 6 * 0xDC + 0xC) = (uint32_t)(0x195 - h); MEM32(COOP_EL + 6 * 0xDC + 0x14) = (uint32_t)h;   /* the fill */
         if (getenv("TT_COOP_GAUGEPROBE")) { static int32_t lh = -1; static uint32_t lt; if (h != lh && coop_now() - lt > 200) { lh = h; lt = coop_now(); tt_dbg("[COOPGAUGE] P2 t %u: exp %d of %d into his level (+90 %.1f +6C %d +78 %d, rating +4 %.2f) -> fill %d of %.0f\n", coop_now() - coop_p2_t0, cur, mxe, MEMF(COOP_P2REC + 0x90), (int32_t)MEM32(COOP_P2REC + 0x6C), (int32_t)MEM32(COOP_P2REC + 0x78), MEMF(COOP_P2REC + 4), h, MEMF(0x173C3Cu)); } }
         MEM8(COOP_EL + 7 * 0xDC + 0x24) = 0;   /* player 1's gain flash: not his */
+        {   /* (1.9.9) his combo meter, from his own run of 0xCF910 (sub_000CF910). List 1's 5 (36 x 1) is drawn as a ring of
+             * flames round the medallion, as far as the angle at its +0xD4 (the meter); copied from player 1's, his ring showed
+             * player 1's meter (in player 1's Perfect a full ring round his medallion). The ring is drawn the same way round
+             * (not mirrored), centred on his medallion (list 1's 4, mirrored above); 6, the flash at the ring's end a moment
+             * after each change, moved with it; 7-9, the Perfect glow on the tube and medallion, mirrored (textured: a negative
+             * width). TT_COOP_P1RING: his ring player 1's, as before */
+            extern int coop_p2_meter_ok; extern uint32_t coop_p2_meter_el(int k, uint32_t off); uint32_t o, e5 = COOP_EL + 10 * 0xDC;
+            int32_t x5 = (int32_t)MEM32(g + 5 * 0xDC + 8), c4 = (int32_t)MEM32(g + 4 * 0xDC + 8) + (int32_t)MEM32(g + 4 * 0xDC + 0x10) / 2, dx;
+            if (!getenv("TT_COOP_P1RING")) { MEM32(e5 + 0xD4) = coop_p2_meter_ok ? coop_p2_meter_el(5, 0xD4) : 0; MEM32(e5 + 8) = (uint32_t)(640 - 2 * c4 + x5); }
+            dx = (int32_t)MEM32(e5 + 8) - x5;
+            for (j = 6; j <= 9 && COOP_EL_N > 15; j++) {
+                uint32_t e = COOP_EL + (uint32_t)(9 + j) * 0xDC; int32_t x, w;
+                for (o = 0; o < 0xDC; o += 4) MEM32(e + o) = coop_p2_meter_el(j, o);
+                x = (int32_t)MEM32(e + 8); w = (int32_t)MEM32(e + 0x10);
+                if (j == 6) MEM32(e + 8) = (uint32_t)(x + dx);
+                else { MEM32(e + 8) = (uint32_t)(640 - x); MEM32(e + 0x10) = (uint32_t)(-w); }
+                MEM8(e + 0x24) = MEM8(e + 0x24) && coop_p2_meter_ok && coop_p2rec_ok && MEM8(g + 4 * 0xDC + 0x24);
+            }
+        }
     }
     {   /* the rating popup (list 1: 10 medallion, 14 the word): after a kill by player 2, mirrored to his side and hidden on player 1's */
         extern uint32_t coop_p2pop_until; uint32_t g = 0x4A3D80u, p10 = g + 10 * 0xDC, p14 = g + 14 * 0xDC; int mine = coop_now() < coop_p2pop_until;
@@ -8993,6 +9029,20 @@ void sub_000BAD10(void)
     sub_000BAD10_gen();
     if (sw) tt_coop_leave();
 }
+/* (1.9.9) Perfect mode a third as long in co-op: the record's +0x60, its length (10 s, from 0x9D850), is what the
+ * meter's step 0x9DF70 sets the time left +0x5C to when the meter reaches Perfect; set before each step, on the hero
+ * records (player 2's is swapped in in his context). A playtest: "reduce the time perfect mode stay active, reduce it
+ * by 2/3". Back to 10 out of co-op. TT_PERFECT_SECS: another length (solo too); TT_PERFECT10: as the game */
+static void coop_perf_len(uint32_t rec)
+{
+    static float len = -1; static int any; extern uint32_t coop_rec_addr; float want;
+    if (len < 0) { const char *v = getenv("TT_PERFECT_SECS"); any = v != NULL; len = v ? (float)atof(v) : 10.0f / 3.0f; if (len <= 0) len = 10.0f / 3.0f; if (getenv("TT_PERFECT10")) len = 10.0f; }
+    if (!((rec == coop_rec_addr && rec) || (rec >= 0x4AB598u && rec < 0x4AB598u + 16u * 0x348u && (rec - 0x4AB598u) % 0x348u == 0))) return;
+    want = coop_mode() == 3 || any ? len : 10.0f;
+    if ((MEMF(rec + 0x60) == 10.0f || MEMF(rec + 0x60) == len) && MEMF(rec + 0x60) != want) {
+        MEMF(rec + 0x60) = want; if (MEMF(rec + 0x5C) > want) MEMF(rec + 0x5C) = want;
+        { static int n; if (n++ < 8) tt_dbg("[PERFLEN] record %08X: Perfect lasts %.2f s\n", rec, want); } }
+}
 /* (research) the hero record's rating methods: who runs them, on whose record (player 2's while in his context), and
  * what +4 does. TT_COOP_RATELOG=1. */
 static unsigned coop_rl_n[6][2];
@@ -9001,6 +9051,7 @@ static void coop_ratelog(int idx, uint32_t fn, void (*gen)(void))
     extern uint32_t coop_rec_addr; uint32_t rec = ecx, ra = MEM32(esp), a1 = MEM32(esp + 4), a2 = MEM32(esp + 8); float b, af;
     int who = MEM32(0x43B15Cu) == coop_p2 && coop_p2 ? 1 : 0, on = getenv("TT_COOP_RATELOG") != 0, isrec = rec == coop_rec_addr && rec;
     b = isrec ? MEMF(rec + 4) : 0;
+    if (idx == 2) coop_perf_len(rec);
     gen();
     if (idx == 1 && who) { extern uint32_t coop_p2_drain_t; coop_p2_drain_t = coop_now() | 1; }
     if (!on || !coop_rec_addr) return;
@@ -10448,6 +10499,54 @@ void sub_000CCF30(void)
         tt_dbg("[P2SWORD] P2 hp %d/%d (HUD %d of %d): silver (9) %d,%dx%d vis %u, red %d, green %d, shown pieces %06X | P1's silver %dx%d vis %u\n", (int32_t)MEM32(p2 + 0x2FC), (int32_t)MEM32(p2 + 0x300), (int32_t)coop_sw_p2s[8], (int32_t)coop_sw_p2s[9],
                (int32_t)coop_p2_sword_el(9, 8), (int32_t)coop_p2_sword_el(9, 0x10), (int32_t)coop_p2_sword_el(9, 0x14), coop_p2_sword_vis(9), (int32_t)coop_p2_sword_el(7, 0x10), (int32_t)coop_p2_sword_el(8, 0x10), coop_p2_sword_shown(),
                (int32_t)MEM32(COOP_SW_A0 + 9 * 0xDC + 0x10), (int32_t)MEM32(COOP_SW_A0 + 9 * 0xDC + 0x14), MEM8(COOP_SW_A0 + 9 * 0xDC + 0x24)); } }
+}
+
+/* (1.9.9) player 2's own combo meter. The gauge's update (0xCF9A0) runs 0xCF910 each frame: the hero record's meter
+ * (+4, from 0x98EE0) to [0x4A6C80] (the last frame's to [0x4A7E60]), and list 1's element 5 +0xD4 an angle by it; a
+ * change shows element 6, a flash, for [0x17B574] (the time left [0x4A79BC], fading), round element 5's centre at
+ * that angle (0xCE250); then 0xCD420: in Perfect mode (+0x5C) 7-9 shown, the glow, pulsing (at its start the sound
+ * 0xAB1). Only player 1's ran: player 2's gauge had no mark nor glow (a playtest: "p1 and p2 need separate combo meter
+ * for the main hud ... the game already has one for the hud"). Now run a second time in his context (his record), on
+ * his copy of elements 5-9 and those three, kept between frames, as his sword. Element 5 (36 x 1) is the meter itself:
+ * the HUD draws it as a ring of flames round the medallion, green to red, as far as its angle. TT_COOP_P1METER: as
+ * before */
+#define COOP_GM_A0 0x4A41CCu
+#define COOP_GM_AN (5u * 0xDCu)
+static const uint32_t coop_gm_sc[] = { 0x4A6C80u, 0x4A7E60u, 0x4A79BCu };
+#define COOP_GM_NS (sizeof coop_gm_sc / sizeof coop_gm_sc[0])
+static uint8_t coop_gm_p2a[COOP_GM_AN]; static uint32_t coop_gm_p2s[COOP_GM_NS]; static unsigned coop_gm_lv = ~0u;
+int coop_p2_meter_ok;
+uint32_t coop_p2_meter_el(int k, uint32_t off) { return k >= 5 && k <= 9 ? *(uint32_t *)(coop_gm_p2a + (uint32_t)(k - 5) * 0xDCu + off) : 0; }
+extern void sub_000CF910_gen(void);
+void sub_000CF910(void)
+{
+    static uint8_t cur[COOP_GM_AN]; uint32_t cs[COOP_GM_NS], i, p2 = coop_p2, sp, r0, r1, r2; int sw; extern int coop_p2rec_ok;
+    sub_000CF910_gen();
+    if (coop_mode() != 3 || p2 < 0x10000u || p2 >= 0x84000000u || coop_depth || MEM32(0x43B15Cu) == p2 || getenv("TT_COOP_P1METER") || !coop_p2rec_ok
+        || MEM32(0x4AD050u) != 6u || MEM32(p2) != 0x1741C0u || p2 != coop_twin) { coop_p2_meter_ok = 0; return; }
+    for (i = 0; i < COOP_GM_AN; i++) cur[i] = MEM8(COOP_GM_A0 + i);
+    for (i = 0; i < COOP_GM_NS; i++) cs[i] = MEM32(coop_gm_sc[i]);
+    if (coop_gm_lv != coop_level_n || !coop_p2_meter_ok) { coop_gm_lv = coop_level_n; memcpy(coop_gm_p2a, cur, COOP_GM_AN);   /* (his starts as player 1's, the mark hidden, at his meter) */
+        coop_gm_p2a[1u * 0xDCu + 0x24u] = 0; coop_gm_p2s[0] = coop_gm_p2s[1] = MEM32(COOP_P2REC + 4); coop_gm_p2s[2] = 0; }
+    for (i = 0; i < COOP_GM_AN; i++) MEM8(COOP_GM_A0 + i) = coop_gm_p2a[i];
+    for (i = 0; i < COOP_GM_NS; i++) MEM32(coop_gm_sc[i]) = coop_gm_p2s[i];
+    sp = esp; r0 = eax; r1 = ecx; r2 = edx; sw = tt_coop_enter_ctx();
+    PUSH32(esp, 0x000CF910u); sub_000CF910_gen();
+    if (sw) tt_coop_leave();
+    esp = sp; eax = r0; ecx = r1; edx = r2;
+    for (i = 0; i < COOP_GM_AN; i++) coop_gm_p2a[i] = MEM8(COOP_GM_A0 + i);
+    for (i = 0; i < COOP_GM_NS; i++) coop_gm_p2s[i] = MEM32(coop_gm_sc[i]);
+    for (i = 0; i < COOP_GM_AN; i++) MEM8(COOP_GM_A0 + i) = cur[i];
+    for (i = 0; i < COOP_GM_NS; i++) MEM32(coop_gm_sc[i]) = cs[i];
+    coop_p2_meter_ok = 1;
+    if (getenv("TT_COOP_METERLOG")) { static uint32_t lt; if (coop_now() - lt > 300u) { lt = coop_now();
+#define COOP_GMP(k, off) (*(uint32_t *)(coop_gm_p2a + (uint32_t)((k) - 5) * 0xDCu + (off)))
+        tt_dbg("[P2METER] t %u: P2 meter %.2f (record %.2f, Perfect %.2f of %.2f), angle %.3f, mark %d,%d shown %u alpha %02X, glow %u%u%u | P1 meter %.2f (Perfect %.2f of %.2f), angle %.3f, mark %d,%d shown %u, glow %u%u%u\n",
+               coop_now() - coop_p2_t0, *(float *)&coop_gm_p2s[0], MEMF(COOP_P2REC + 4), MEMF(COOP_P2REC + 0x5C), MEMF(COOP_P2REC + 0x60), *(float *)&COOP_GMP(5, 0xD4), (int32_t)COOP_GMP(6, 8), (int32_t)COOP_GMP(6, 0xC),
+               coop_gm_p2a[0xDCu + 0x24u], (COOP_GMP(6, 0x20) >> 24) & 0xFFu, coop_gm_p2a[2u * 0xDCu + 0x24u], coop_gm_p2a[3u * 0xDCu + 0x24u], coop_gm_p2a[4u * 0xDCu + 0x24u],
+               MEMF(0x4A6C80u), MEMF(coop_rec_addr + 0x5C), MEMF(coop_rec_addr + 0x60), MEMF(0x4A42A0u), (int32_t)MEM32(0x4A42B0u), (int32_t)MEM32(0x4A42B4u), MEM8(0x4A42CCu), MEM8(0x4A43A8u), MEM8(0x4A4484u), MEM8(0x4A4560u));
+#undef COOP_GMP
+    } }
 }
 
 /* ---- (1.9.8) the game's memory pool, larger ----
