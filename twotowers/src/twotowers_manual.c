@@ -4914,6 +4914,9 @@ static void coop_place(void)
         extern int tt_coop_setting(int i);
         if (a >= 0x10000u && p1 >= 0x10000u && coop_place_frames <= 0 && !coop_hero_down(0) && !coop_hero_down(1) && !getenv("TT_COOP_NOCATCHUP") && tt_coop_setting(3)) {   /* (the Co-op menu's P2 Teleport) */
             float dx = MEMF(p1 + 0xF0) - MEMF(a + 0xF0), dy = MEMF(p1 + 0xF4) - MEMF(a + 0xF4), R = coop_leash_radius() * 1.5f;
+            if (getenv("TT_COOP_TESTFAR")) { static int moved; if (!moved && coop_p2_t0 && coop_now() - coop_p2_t0 > (uint32_t)atoi(getenv("TT_COOP_TESTFAR"))) {   /* (bot test) player 2 put 100 units off, for the catch-up to bring back (a playtest: invisible after a long put-beside) */
+                uint32_t q; moved = 1; MEMF(a + 0xF0) = MEMF(p1 + 0xF0) + 100.0f; for (q = 0; q < 3; q++) MEM32(a + 0x90 + 4 * q) = MEM32(a + 0x130 + 4 * q) = MEM32(a + 0x140 + 4 * q) = MEM32(a + 0xF0 + 4 * q);
+                tt_dbg("[COOP2] test: player 2 put 100 units off (+118 node %08X)\n", MEM32(a + 0x118)); } }
             if (getenv("TT_COOP_TESTDROP")) { static int dropped; if (!dropped && coop_p2_t0 && coop_now() - coop_p2_t0 > (uint32_t)atoi(getenv("TT_COOP_TESTDROP"))) {   /* (bot test) player 2 put off Weathertop's summit, where one fell in a bot run */
                 uint32_t q; dropped = 1; MEMF(a + 0xF0) = -70.0f; MEMF(a + 0xF4) = -7.0f; for (q = 0; q < 3; q++) MEM32(a + 0x90 + 4 * q) = MEM32(a + 0x130 + 4 * q) = MEM32(a + 0x140 + 4 * q) = MEM32(a + 0xF0 + 4 * q); tt_dbg("[COOP2] test: player 2 dropped to %.1f\n", MEMF(a + 0xF8)); } }
             if (dx * dx + dy * dy > R * R || MEMF(a + 0xF8) < MEMF(p1 + 0xF8) - 15.0f) {   /* (or 15 units under him: fallen off, a bot run at Weathertop) */
@@ -5550,12 +5553,14 @@ void coop_p1_down_now(void)   /* player 1 goes down while player 2 is up (the he
     MEM32(coop_first_char + 0x2FC) = 1; coop_down[0] = 1; coop_down_t[0] = coop_now();
     tt_dbg("[COOPDEATH] P1 down (P2 alive): held at 1 health, respawn in %u ms\n", wait);
 }
+int tt_hp_pct(void) { return getenv("TT_HPPCT") ? atoi(getenv("TT_HPPCT")) : 125; }   /* (1.9.9) the heroes' full health, % (tt_hero_hp_tick) */
 /* players' health by the difficulty: each hero's max health (+0x300) scaled, and his health with it; again whenever
  * the game sets the max anew (0x8C850: a level's start, an upgrade) */
 static int32_t coop_hpmax_set[2];
 static void coop_diff_health(void)
 {
-    int w; float f = coop_hp_scale();
+    int w; float f = coop_hp_scale() * (tt_vs_on() ? 1.0f : (float)tt_hp_pct() / 100.0f);   /* (1.9.9 merge: and tt_hero_hp_tick's 125%, which no longer runs in co-op:
+                                                                     * each scaled the other's max again, a playtest's player 1 at 152718) */
     if (coop_mode() != 3) return;
     for (w = 0; w < 2; w++) {
         uint32_t a = w ? coop_p2 : coop_first_char; int32_t m, h, nm;
@@ -12071,8 +12076,12 @@ void tt_hero_hp_tick(void)
                 b[q] = 0; if (q) tt_dbg("[POPLOG] t %u list %d.%d '%s' on %u at %d,%d\n", tt_game_ms, li, e, b, MEM8(el + 0x24), (int)MEM32(el + 8), (int)MEM32(el + 0xC)); } }
     }
     extern int tt_vs_on(void); static uint32_t who[2], base[2], ours[2]; int w;
-    int pct = getenv("TT_HPPCT") ? atoi(getenv("TT_HPPCT")) : 125;
+    int pct = tt_hp_pct();
     if (pct == 100 || tt_vs_on()) return;
+    if (coop_mode() == 3 && !getenv("TT_COOP_HPBOTH")) return;   /* (merge with coop-199) co-op: coop_diff_health applies it with the difficulty's
+                                                                   * scale -- the two each took the other's max as new and scaled it again, max
+                                                                   * health x1.25 x1.5 over and over at a level's start (a playtest: player 1 152718).
+                                                                   * TT_COOP_HPBOTH: both, as 1.9.9 */
     for (w = 0; w < 2; w++) {
         uint32_t a = w ? (coop_mode() == 3 ? coop_p2 : 0) : (coop_mode() == 3 && coop_first_char >= 0x10000u ? coop_first_char : MEM32(0x43B15Cu));
         int32_t mx, hp, nm;
