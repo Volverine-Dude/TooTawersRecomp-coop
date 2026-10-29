@@ -4240,6 +4240,13 @@ static void coop_blk_off(uint32_t a) { uint32_t i; for (i = 0; i < COOP_NBLK; i+
 static void coop_blk_opts(void) { static int done; if (!done) { done = 1; if (getenv("TT_COOP_NOCOMBOSWAP")) coop_blk_off(0x43B264u);
     if (getenv("TT_COOP_NOPERFSWAP")) { coop_blk_off(0x43B240u); coop_blk_off(0x43B25Cu); coop_blk_off(0x43B3DAu); }
     if (getenv("TT_COOP_NOPFXSWAP")) { coop_blk_off(0x43B22Cu); coop_blk_off(0x43B248u); } } }   /* (test: those shared, as before) */
+uint32_t coop_blk_val(int who, uint32_t a)   /* a swapped global's value for player 1 (0) or 2 (1): live for whoever's context is loaded, else his saved copy */
+{
+    uint32_t i, o = 0; int in2 = MEM32(0x43B15Cu) == coop_p2 && coop_p2;
+    if (who == in2) return MEM32(a);
+    for (i = 0; i < COOP_NBLK; i++) { if (a >= coop_blk[i].a && a + 4 <= coop_blk[i].a + coop_blk[i].n) { const uint8_t *s = (who ? coop_s2 : coop_s1) + o + (a - coop_blk[i].a); return (uint32_t)s[0] | (uint32_t)s[1] << 8 | (uint32_t)s[2] << 16 | (uint32_t)s[3] << 24; } o += coop_blk[i].n; }
+    return 0;
+}
 static void coop_save(uint8_t *s) { uint32_t i, j, o = 0; coop_blk_opts(); for (i = 0; i < COOP_NBLK; i++) for (j = 0; j < coop_blk[i].n; j++) s[o++] = MEM8(coop_blk[i].a + j); if (coop_rec_addr) for (j = 0; j < 0x348; j += 4) *(uint32_t *)(s + 0x400 + j) = MEM32(coop_rec_addr + j); }
 static void coop_load(const uint8_t *s) { uint32_t i, j, o = 0; coop_blk_opts(); for (i = 0; i < COOP_NBLK; i++) for (j = 0; j < coop_blk[i].n; j++) MEM8(coop_blk[i].a + j) = s[o++]; if (coop_rec_addr) for (j = 0; j < 0x348; j += 4) MEM32(coop_rec_addr + j) = *(const uint32_t *)(s + 0x400 + j); }
 const uint8_t *coop_p2_state(void) { return coop_s2; }
@@ -5241,6 +5248,16 @@ static void coop_exp_frame(void)   /* the HUD's copy of player 2's record (his g
         if (!next) next = coop_p2_t0 + (uint32_t)atoi(getenv("TT_COOP_TESTPERF1"));
         if (coop_now() >= next) { next = coop_now() + 20000u; MEMF(coop_rec_addr + 4) = MEMF(0x175324u) + 0.5f;
             tt_dbg("[COOPEXP] test: player 1's meter set to %.1f (glow %08X; player 2's %08X)\n", MEMF(coop_rec_addr + 4), MEM32(0x43B25Cu), *(const uint32_t *)(coop_s2 + 0x48 + 0x58 + 0x5F + 0xF8 + 0x10 + 0x20 + 4 + 0x24 + 4 + 4 + 4 + 8)); } }
+    if (coop_p2_t0 && coop_rec_addr && !coop_depth && MEM32(0x43B15Cu) != coop_p2 && !getenv("TT_COOP_NOGLOWWATCH")) {   /* (1.9.9 merge) a playtest: player 2's own
+         * Perfect glow stayed on his weapon after his Perfect (not reproduced by bots): each player's glow (0x43B25C, his copy in the context
+         * swap) still up 1 s after his Perfect time ran out is logged, with what he holds */
+        extern uint32_t coop_blk_val(int who, uint32_t a); static uint32_t since[2]; static int said[2]; int w;
+        for (w = 0; w < 2; w++) { uint32_t gl = coop_blk_val(w, 0x43B25Cu), g2 = coop_blk_val(w, 0x43B260u), node = coop_blk_val(w, 0x43B240u); float pt = w ? MEMF(COOP_P2REC + 0x5C) : MEMF(coop_rec_addr + 0x5C);
+            if ((gl || g2) && pt <= 0.0f) { if (!since[w]) since[w] = coop_now() | 1; else if (coop_now() - since[w] > 1000u && said[w] < 6) { uint32_t pl = w ? coop_p2 : coop_first_char; said[w]++;
+                tt_dbg("[GLOWSTUCK] P%d t %u: Perfect glow %08X %08X (node %08X) still up %u ms after his Perfect ended; state %u, slots %08X %08X %08X, +110 %08X\n", w + 1, coop_now() - coop_p2_t0, gl, g2, node, coop_now() - since[w],
+                       pl >= 0x10000u ? MEM32(pl + 0x408) : 0, pl >= 0x10000u ? MEM32(pl + 0x420) : 0, pl >= 0x10000u ? MEM32(pl + 0x424) : 0, pl >= 0x10000u ? MEM32(pl + 0x428) : 0, pl >= 0x10000u ? MEM32(pl + 0x110) : 0); } }
+            else since[w] = 0; }
+    }
     if (getenv("TT_COOP_TESTPERF2") && coop_p2_t0 && coop_rec_addr && !coop_depth && MEM32(0x43B15Cu) != coop_p2) {   /* bot test: player 2's the same (his record's copy in the context swap) */
         static uint32_t next2; float pv = MEMF(0x175324u) + 0.5f;
         if (!next2) next2 = coop_p2_t0 + (uint32_t)atoi(getenv("TT_COOP_TESTPERF2"));
