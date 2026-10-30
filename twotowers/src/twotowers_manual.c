@@ -4694,7 +4694,7 @@ static void coop_place_target(uint32_t p1, float *x, float *y)
 
     uint32_t pm = coop_pathmap(p1);
     float px = MEMF(p1 + 0xF0u), py = MEMF(p1 + 0xF4u);
-    *x = px + COOP_PLACE_GAP; *y = py;
+    *x = px + (getenv("TT_COOP_NOPATHPLACE") ? COOP_PLACE_GAP : 0.0f); *y = py;   /* (no pathmap: his own spot, never blindly to the side) */
     if (pm && !getenv("TT_COOP_NOPATHPLACE")) {
         enum { M = 5, N = 2 * M + 1 };   /* the cells within M of his */
         static const int dc4[4] = { 1, -1, 0, 0 }, dr4[4] = { 0, 0, 1, -1 };
@@ -4723,7 +4723,7 @@ static void coop_place_target(uint32_t p1, float *x, float *y)
         if (found) { *x = bx; *y = by; }
         tt_dbg("[COOP2] place: pathmap %u, player 1's cell %d,%d = %d, %d cells walked: %s %.2f %.2f\n", MEM32(p1 + 0x2ECu), c0, r0, v0, qn,
                found ? "on the path at" : "no clear cell, on his own spot at", *x, *y);
-    } else tt_dbg("[COOP2] place: no pathmap for player 1 (+2EC %u): to the side\n", p1 >= 0x10000u ? MEM32(p1 + 0x2ECu) : 0);
+    } else tt_dbg("[COOP2] place: no pathmap for player 1 (+2EC %u): on his own spot\n", p1 >= 0x10000u ? MEM32(p1 + 0x2ECu) : 0);
 }
 static int coop_start_place = 1;   /* play (re)starting: player 2 to be put beside player 1 (coop_place) */
 static void coop_place(void)
@@ -4825,18 +4825,33 @@ static void coop_place(void)
          * TT_COOP_NOJUMPFOLLOW: off. */
         extern int tt_in_scene(void); extern int xbox_MoviePlaying(void);
         static uint32_t prev_p1; static float lx, ly;
+        if (getenv("TT_COOP_TESTPARK") && p1 >= 0x10000u && coop_p2_t0) {   /* (bot test) player 1 parked off the map 6 s, as a Weathertop cutscene did (28 units off, 32 down, no pathmap), then back */
+            static uint32_t t0, spm; static int st; static float sv[3]; uint32_t q, b = MEM32(p1 + 0x494);
+            if (st == 0 && coop_now() - coop_p2_t0 > (uint32_t)atoi(getenv("TT_COOP_TESTPARK"))) { st = 1; t0 = coop_now(); for (q = 0; q < 3; q++) sv[q] = MEMF(p1 + 0xF0 + 4 * q); spm = MEM32(p1 + 0x2ECu); tt_dbg("[COOP2] test: player 1 parked off the map\n"); }
+            if (st == 1 || (st == 2 && coop_now() - t0 < 6100u)) {
+                float v[3]; v[0] = sv[0] + 20.0f; v[1] = sv[1] + 20.0f; v[2] = sv[2] - 32.0f;
+                if (coop_now() - t0 >= 6000u) { v[0] = sv[0]; v[1] = sv[1]; v[2] = sv[2]; if (st == 1) tt_dbg("[COOP2] test: player 1 back\n"); st = 2; }
+                for (q = 0; q < 3; q++) { MEMF(p1 + 0xF0 + 4 * q) = MEMF(p1 + 0x90 + 4 * q) = MEMF(p1 + 0x130 + 4 * q) = MEMF(p1 + 0x140 + 4 * q) = MEMF(p1 + 0x628 + 4 * q) = v[q]; if (b >= 0x80000000u && b < 0x84000000u) MEMF(b + 0xE8 + 4 * q) = v[q]; }
+                MEM32(p1 + 0x2ECu) = st == 1 ? 0xFFFFFFFFu : spm;
+            }
+        }
         if (p1 >= 0x10000u && a >= 0x10000u && p1 == prev_p1 && !getenv("TT_COOP_NOJUMPFOLLOW")) {
             float dx = MEMF(p1 + 0xF0u) - lx, dy = MEMF(p1 + 0xF4u) - ly;
             if (dx * dx + dy * dy > 36.0f) {
-                tt_dbg("[COOP2] player 1 moved %.1f units in a frame (to %.1f %.1f %.1f, %s%s, pathmap %d): player 2 with him\n", sqrtf(dx * dx + dy * dy),
-                       MEMF(p1 + 0xF0u), MEMF(p1 + 0xF4u), MEMF(p1 + 0xF8u), tt_in_scene() ? "in a cutscene" : "in play", xbox_MoviePlaying() ? ", movie" : "", (int)MEM32(p1 + 0x2ECu));
-                coop_place_frames = 3; place_have = 0; place_nopm = !coop_pathmap(p1);
+                /* (with no pathmap there player 2 stays put until player 1 has one: a cutscene at Weathertop parked player 1
+                 * 32 units under the summit, off the map, player 2 was put beside him and fell into the void, a playtest) */
+                int nopm = !coop_pathmap(p1) && !getenv("TT_COOP_OLDNOPMJUMP");
+                tt_dbg("[COOP2] player 1 moved %.1f units in a frame (to %.1f %.1f %.1f, %s%s, pathmap %d): %s\n", sqrtf(dx * dx + dy * dy),
+                       MEMF(p1 + 0xF0u), MEMF(p1 + 0xF4u), MEMF(p1 + 0xF8u), tt_in_scene() ? "in a cutscene" : "in play", xbox_MoviePlaying() ? ", movie" : "", (int)MEM32(p1 + 0x2ECu),
+                       nopm ? "off the pathmaps, player 2 left where he is until player 1 has one" : "player 2 with him");
+                if (nopm) place_nopm = 1;
+                else { coop_place_frames = 3; place_have = 0; place_nopm = 0; }
             }
         }
         if (place_nopm && coop_place_frames <= 0 && a >= 0x10000u && p1 >= 0x10000u && coop_pathmap(p1)) {
-            float dx = MEMF(a + 0xF0u) - place_x, dy = MEMF(a + 0xF4u) - place_y;
+            float dx = MEMF(a + 0xF0u) - MEMF(p1 + 0xF0u), dy = MEMF(a + 0xF4u) - MEMF(p1 + 0xF4u);
             place_nopm = 0;
-            if (dx * dx + dy * dy < 1.0f) { coop_place_frames = 3; place_have = 0; tt_dbg("[COOP2] player 1's pathmap now there: player 2 put on the path\n"); }
+            if (dx * dx + dy * dy > 64.0f || MEMF(a + 0xF8u) < MEMF(p1 + 0xF8u) - 15.0f) { coop_place_frames = 3; place_have = 0; tt_dbg("[COOP2] player 1's pathmap now there: player 2 (%.1f units off) put on the path beside him\n", sqrtf(dx * dx + dy * dy)); }
         }
         if (getenv("TT_COOP_GOALSCAN") && p1 >= 0x10000u && tt_in_scene()) {   /* (testing) "x,y": where in player 1 (and one pointer deep) a pair of floats within 1 unit of x, y sits */
             static uint32_t lt; float gx = 0, gy = 0;
@@ -4890,6 +4905,15 @@ static void coop_place(void)
         if (p1 >= 0x10000u) { lx = MEMF(p1 + 0xF0u); ly = MEMF(p1 + 0xF4u); }
     }
     if (after > 0 && a >= 0x10000u) { after--; tt_dbg("[COOP2] place: next frame reads %.2f %.2f %.2f (+90: %.2f %.2f)\n", MEMF(a + 0xF0), MEMF(a + 0xF4), MEMF(a + 0xF8), MEMF(a + 0x90), MEMF(a + 0x94)); }
+    if (getenv("TT_COOP_PLACEPROBE") && after == 1 && a >= 0x10000u && fabsf(MEMF(a + 0xF0) - place_x) + fabsf(MEMF(a + 0xF4) - place_y) > 5.0f) {   /* (research) the put-beside undone the next frame: where else player 2's old place is kept */
+        static int n; uint32_t o, o2, q; float rx = MEMF(a + 0xF0), ry = MEMF(a + 0xF4);
+        if (n++ < 4) for (o = 0; o < 0x1400u; o += 4) {
+            if (fabsf(MEMF(a + o) - rx) < 3.0f && fabsf(MEMF(a + o + 4) - ry) < 3.0f) tt_dbg("[PLACEPROBE] player 2 +%03X: %.2f %.2f %.2f\n", o, MEMF(a + o), MEMF(a + o + 4), MEMF(a + o + 8));
+            q = MEM32(a + o);
+            if (q >= 0x80000000u && q < 0x83F00000u && q != a) for (o2 = 0; o2 < 0x300u; o2 += 4)
+                if (fabsf(MEMF(q + o2) - rx) < 3.0f && fabsf(MEMF(q + o2 + 4) - ry) < 3.0f) tt_dbg("[PLACEPROBE] player 2 +%03X -> %08X +%03X: %.2f %.2f %.2f\n", o, q, o2, MEMF(q + o2), MEMF(q + o2 + 4), MEMF(q + o2 + 8));
+        }
+    }
     {   /* the mission's start, and the end of each cutscene or movie: the level puts player 1 at his own start point
          * (Gates of Moria: player 2 Legolas was left where the level's Legolas stands, the shared camera on a rock).
          * Once play has run 0.3 s, player 2 further than 8 units from player 1 (he walked with him through a cutscene: nearby is fine) is put beside him, whatever
@@ -4917,16 +4941,23 @@ static void coop_place(void)
     {   /* catch-up: the level moves player 1 on its own (the Gates of Moria's opening puts him at his start point after
          * the movie, 47 units from where the twin was built: the shared camera looked at a rock, observed). Player 2
          * further out than 1.5 x the leash for 0.5 s, neither hero down: put him beside player 1. TT_COOP_NOCATCHUP: off. */
-        static uint32_t far_t; extern float coop_leash_radius(void); extern int coop_hero_down(int);
-        extern int tt_coop_setting(int i);
-        if (a >= 0x10000u && p1 >= 0x10000u && coop_place_frames <= 0 && !coop_hero_down(0) && !coop_hero_down(1) && !getenv("TT_COOP_NOCATCHUP") && tt_coop_setting(3)) {   /* (the Co-op menu's P2 Teleport) */
+        static uint32_t far_t, void_t; extern float coop_leash_radius(void); extern int coop_hero_down(int);
+        extern int tt_coop_setting(int i); extern int tt_in_scene(void);
+        /* (a fall is caught whatever P2 Teleport says -- off, player 2 stayed in the void; and neither while player 1 is off the
+         * pathmaps, parked by a cutscene: Weathertop's put him beside a player 1 under the summit again and again, a playtest) */
+        int old = getenv("TT_COOP_OLDCATCHUP") != NULL, pm_ok = old || (coop_pathmap(p1) && !tt_in_scene());
+        if (a >= 0x10000u && p1 >= 0x10000u && coop_place_frames <= 0 && !coop_hero_down(0) && !coop_hero_down(1) && !getenv("TT_COOP_NOCATCHUP") && pm_ok && (tt_coop_setting(3) || !old)) {   /* (the Co-op menu's P2 Teleport) */
             float dx = MEMF(p1 + 0xF0) - MEMF(a + 0xF0), dy = MEMF(p1 + 0xF4) - MEMF(a + 0xF4), R = coop_leash_radius() * 1.5f;
             if (getenv("TT_COOP_TESTFAR")) { static int moved; if (!moved && coop_p2_t0 && coop_now() - coop_p2_t0 > (uint32_t)atoi(getenv("TT_COOP_TESTFAR"))) {   /* (bot test) player 2 put 100 units off, for the catch-up to bring back (a playtest: invisible after a long put-beside) */
                 uint32_t q; moved = 1; MEMF(a + 0xF0) = MEMF(p1 + 0xF0) + 100.0f; for (q = 0; q < 3; q++) MEM32(a + 0x90 + 4 * q) = MEM32(a + 0x130 + 4 * q) = MEM32(a + 0x140 + 4 * q) = MEM32(a + 0xF0 + 4 * q);
                 tt_dbg("[COOP2] test: player 2 put 100 units off (+118 node %08X)\n", MEM32(a + 0x118)); } }
             if (getenv("TT_COOP_TESTDROP")) { static int dropped; if (!dropped && coop_p2_t0 && coop_now() - coop_p2_t0 > (uint32_t)atoi(getenv("TT_COOP_TESTDROP"))) {   /* (bot test) player 2 put off Weathertop's summit, where one fell in a bot run */
                 uint32_t q; dropped = 1; MEMF(a + 0xF0) = -70.0f; MEMF(a + 0xF4) = -7.0f; for (q = 0; q < 3; q++) MEM32(a + 0x90 + 4 * q) = MEM32(a + 0x130 + 4 * q) = MEM32(a + 0x140 + 4 * q) = MEM32(a + 0xF0 + 4 * q); tt_dbg("[COOP2] test: player 2 dropped to %.1f\n", MEMF(a + 0xF8)); } }
-            if (dx * dx + dy * dy > R * R || MEMF(a + 0xF8) < MEMF(p1 + 0xF8) - 15.0f) {   /* (or 15 units under him: fallen off, a bot run at Weathertop) */
+            if (getenv("TT_COOP_TESTVOID")) { static int put; if (!put && coop_p2_t0 && coop_now() - coop_p2_t0 > (uint32_t)atoi(getenv("TT_COOP_TESTVOID"))) {   /* (bot test) player 2 put far under the level, the catch-up held 8 s: a long fall, as after Weathertop's cutscene in a playtest */
+                uint32_t q; put = 1; void_t = coop_now() | 1; MEMF(a + 0xF0) = MEMF(p1 + 0xF0) + 250.0f; MEMF(a + 0xF8) = MEMF(p1 + 0xF8) - 200.0f; for (q = 0; q < 3; q++) MEM32(a + 0x90 + 4 * q) = MEM32(a + 0x130 + 4 * q) = MEM32(a + 0x140 + 4 * q) = MEM32(a + 0xF0 + 4 * q);
+                tt_dbg("[COOP2] test: player 2 put under the level at %.1f %.1f %.1f\n", MEMF(a + 0xF0), MEMF(a + 0xF4), MEMF(a + 0xF8)); } }
+            if (void_t && coop_now() - void_t < 8000u) far_t = 0; else
+            if ((dx * dx + dy * dy > R * R && tt_coop_setting(3)) || MEMF(a + 0xF8) < MEMF(p1 + 0xF8) - 15.0f) {   /* (or 15 units under him: fallen off, a bot run at Weathertop) */
                 if (!far_t) far_t = coop_now() | 1;
                 else if (coop_now() - far_t > 500u) { far_t = 0; coop_place_frames = 3; tt_dbg("[COOP2] catch-up: player 2 %.1f units from player 1, put beside him\n", sqrtf(dx * dx + dy * dy)); }
             } else far_t = 0;
@@ -4954,6 +4985,11 @@ static void coop_place(void)
     for (k = 0; k < 3; k++) MEM32(a + 0x90 + 4 * k) = MEM32(a + 0x130 + 4 * k) = MEM32(a + 0x140 + 4 * k) = MEM32(a + 0xF0 + 4 * k);   /* (+0x130 / +0x140: the
      * places a move or a fall starts from -- with only +0xF0 written, player 2 falling under Weathertop's summit was put back
      * beside player 1 again and again and the next frame read his fall again: 35 s below the level, a bot run) */
+    {   /* (and a long fall's own copies, +0x628 and his body's +0xE8 ([+0x494]): the next frame took his place back from them,
+         * 600 units under Weathertop after a cutscene, a playtest; found with TT_COOP_PLACEPROBE. TT_COOP_NOFALLPLACE: as before) */
+        uint32_t b = MEM32(a + 0x494);
+        if (!getenv("TT_COOP_NOFALLPLACE")) for (k = 0; k < 3; k++) { MEM32(a + 0x628 + 4 * k) = MEM32(a + 0xF0 + 4 * k); if (b >= 0x80000000u && b < 0x84000000u) MEM32(b + 0xE8 + 4 * k) = MEM32(a + 0xF0 + 4 * k); }
+    }
 }static void coop_gate_log(int who)
 {
     static uint32_t last[3];
@@ -10370,11 +10406,18 @@ static void coop_lad_cmd(uint32_t fn, const uint32_t *hdr, const uint32_t *slot,
  * it is of a multiplied kind (coop_mult_kind) */
 static int coop_enemy_mult(void);
 static struct { uint32_t a, t; } coop_xtr[32]; static int coop_nxtr;   /* (testing, TT_SPAWNLOG) the extras sent out, followed for 30 s */
+static struct { uint32_t sp, t; } coop_ask[128]; static int coop_nask;   /* each spawner's last @SpawnAnObject (coop_pool_frame's small pools) */
+static uint32_t coop_ask_age(uint32_t sp)
+{
+    int k; for (k = 0; k < coop_nask; k++) if (coop_ask[k].sp == sp) return coop_now() - coop_ask[k].t;
+    return 0xFFFFFFFFu;
+}
 extern void sub_000AB520_gen(void); void sub_000AB520(void)
 {
     uint32_t sp = coop_mode() ? tt_gcall(0x0009E180u, 0, 0, NULL) : 0, ra = eax;
     int m, i;
     coop_spawnlog("SpawnAnObject", sub_000AB520_gen);
+    if (coop_is_spawner(sp)) { for (i = 0; i < coop_nask && coop_ask[i].sp != sp; i++) ; if (i < 128) { coop_ask[i].sp = sp; coop_ask[i].t = coop_now(); if (i == coop_nask) coop_nask++; } }
     if (!coop_is_spawner(sp) || getenv("TT_COOP_MULTNOSPAWN")) return;
     ra = eax; m = coop_enemy_mult();
     if (getenv("TT_SPAWNLOG")) { static int n; if (n++ < 80) tt_dbg("[COOPMULT] @SpawnAnObject on %08X: %d ready, %d spawned, next '%s'\n", sp, (int32_t)MEM32(sp + 0x3D0), (int32_t)MEM32(sp + 0x3DC), coop_spawner_next(sp) ? coop_nm(coop_spawner_next(sp)) : "-"); }
@@ -10400,7 +10443,7 @@ extern void sub_000AB520_gen(void); void sub_000AB520(void)
  * (@MakeReadyForRespawn sets it). In co-op, a pooled character dead for 10 s gets +0x3B8 again, up to
  * (multiplier - 1) times: easy 1x, medium 2x, hard 3x (TT_COOP_ENEMYMULT sets it). Placed enemies that no
  * spawner owns (Weathertop's) are not multiplied. */
-static struct { uint32_t spawner, who, dead_t, sent; int revived, pend; } coop_pool[512]; static int coop_npool;
+static struct { uint32_t spawner, who, dead_t, sent, pend_t; int revived, pend, out; } coop_pool[512]; static int coop_npool;
 static int coop_enemy_mult(void)
 {
     int d = tt_coop_setting(0), m;
@@ -10455,8 +10498,9 @@ extern void sub_000A6480_gen(void); void sub_000A6480(void)
     {   uint32_t sp = 0, who = 0; int k;
         for (i = n0; i < coop_lkn && i < n0 + 4; i++) { uint32_t o = coop_lk[i & 63].obj; if (o < 0x10000u) continue; if (coop_is_spawner(o) && !sp) sp = o; else if (MEM32(o) == 0x1741C0u && !who) who = o; }
         if (!sp || !who) return;
+        if (getenv("TT_SPAWNLOG")) { static int n; if (n++ < 80) tt_dbg("[COOPMULT] spawner %08X '%s' at %.1f %.1f %.1f pools %08X '%s'\n", sp, coop_nm(sp), MEMF(sp + 0xF0), MEMF(sp + 0xF4), MEMF(sp + 0xF8), who, coop_nm(who)); }
         for (k = 0; k < coop_npool; k++) if (coop_pool[k].who == who) { coop_pool[k].spawner = sp; return; }
-        if (coop_npool < 512) { coop_pool[coop_npool].spawner = sp; coop_pool[coop_npool].who = who; coop_pool[coop_npool].dead_t = 0; coop_pool[coop_npool].revived = 0; coop_pool[coop_npool].pend = 0; coop_pool[coop_npool].sent = 0; coop_npool++; }
+        if (coop_npool < 512) { coop_pool[coop_npool].spawner = sp; coop_pool[coop_npool].who = who; coop_pool[coop_npool].dead_t = 0; coop_pool[coop_npool].revived = 0; coop_pool[coop_npool].pend = 0; coop_pool[coop_npool].out = 0; coop_pool[coop_npool].sent = 0; coop_npool++; }
     }
 }
 static void coop_pool_frame(void);
@@ -10470,10 +10514,28 @@ static void coop_pool_frame(void)
         uint32_t a = coop_pool[k].who; int32_t hp;
         if (a < 0x10000u || MEM32(a) != 0x1741C0u) continue;
         hp = (int32_t)MEM32(a + 0x2FC);
+        if (!(MEM32(a + 0x110) & 0x200000u)) { if (hp > 0) coop_pool[k].out = 1; }
+        else if (coop_pool[k].out && !coop_pool[k].pend) {   /* back in its pool by the game's own doing (+0x3B8 set at his death's end; Gates of Moria): a revival too, for a spawner of 2 */
+            coop_pool[k].out = 0;
+            int own = 0, j; for (j = 0; j < coop_npool; j++) if (coop_pool[j].spawner == coop_pool[k].spawner) own++;
+            if (own <= 2 && coop_pool[k].revived < m - 1 && coop_mult_kind(a) && !getenv("TT_COOP_NOSMALLPOOL")) {   /* (spawners of 2 only: bigger ones the script sends out again itself) */
+                coop_pool[k].revived++; coop_pool[k].pend = 1; coop_pool[k].pend_t = now;
+                tt_dbg("[COOPMULT] %08X '%s' back in spawner %08X's pool by the game (revival %d of %d)\n", a, coop_nm(a), coop_pool[k].spawner, coop_pool[k].revived, m - 1);
+            }
+        }
         if (coop_pool[k].pend && (MEM32(a + 0x110) & 0x200000u)) {   /* back in the ready list: the spawner sends one out now (its vtable +0xC4, as @SpawnAnObject does; the level's script spawns in bursts and may not ask again) */
-            uint32_t sp = coop_pool[k].spawner, v = 0, got;
-            coop_pool[k].pend = 0;
-            if (coop_is_spawner(sp) && MEM32(sp) == 0x174B60u && !getenv("TT_COOP_MULTNOSPAWN") && (int32_t)MEM32(sp + 0x3D0) > 1 && coop_mult_kind(coop_spawner_next(sp))) {   /* (one left ready, as above) */
+            uint32_t sp = coop_pool[k].spawner, v = 0, got; int own = 0, j;
+            /* (one is left ready for the script, as above -- but a spawner of 2 (Gates of Moria's 23 of 25, the Courtyard's)
+             * then never had a spare and nothing came back: there its last goes too once the script hasn't asked it for one
+             * in 5 s, TT_COOP_SMALLPOOLWAIT ms; waited for up to 30 s. TT_COOP_NOSMALLPOOL: as before) */
+            for (j = 0; j < coop_npool; j++) if (coop_pool[j].spawner == sp) own++;
+            if (coop_is_spawner(sp) && MEM32(sp) == 0x174B60u && (int32_t)MEM32(sp + 0x3D0) == 1 && own <= 2 && !getenv("TT_COOP_NOSMALLPOOL")
+                && coop_ask_age(sp) < (getenv("TT_COOP_SMALLPOOLWAIT") ? (uint32_t)atoi(getenv("TT_COOP_SMALLPOOLWAIT")) : 5000u)) {
+                if (!coop_pool[k].pend_t) coop_pool[k].pend_t = now | 1;
+                if (now - coop_pool[k].pend_t < 30000u) continue;
+            }
+            coop_pool[k].pend = 0; coop_pool[k].pend_t = 0;
+            if (coop_is_spawner(sp) && MEM32(sp) == 0x174B60u && !getenv("TT_COOP_MULTNOSPAWN") && ((int32_t)MEM32(sp + 0x3D0) > 1 || ((int32_t)MEM32(sp + 0x3D0) == 1 && own <= 2 && !getenv("TT_COOP_NOSMALLPOOL"))) && coop_mult_kind(coop_spawner_next(sp))) {
                 got = tt_gcall(MEM32(MEM32(sp) + 0xC4u), sp, 1, &v);
                 if (got >= 0x10000u) MEM8(got + 0x3B8) = 0;
                 coop_pool[k].sent = got;   /* (left set, the spawner's next update took him straight back into its pool, hidden; observed) */
@@ -10486,7 +10548,7 @@ static void coop_pool_frame(void)
         if (!coop_mult_kind(a)) continue;   /* (only melee orcs come back: coop_mult_kind) */
         if (!coop_pool[k].dead_t) { coop_pool[k].dead_t = now | 1; continue; }
         if (now - coop_pool[k].dead_t < (getenv("TT_COOP_MULTDELAY") ? (uint32_t)atoi(getenv("TT_COOP_MULTDELAY")) : 10000u) || coop_pool[k].revived >= m - 1) continue;   /* (4 s: revived during his death sequence, whose end set +0x3B8 again, and the spawner took him back: observed) */
-        MEM8(a + 0x3B8) = 1; coop_pool[k].revived++; coop_pool[k].dead_t = 0; coop_pool[k].pend = 1;
+        MEM8(a + 0x3B8) = 1; coop_pool[k].revived++; coop_pool[k].dead_t = 0; coop_pool[k].pend = 1; coop_pool[k].out = 0;
         tt_dbg("[COOPMULT] %08X '%s' back to spawner %08X's pool (revival %d of %d)\n", a, coop_nm(a), coop_pool[k].spawner, coop_pool[k].revived, m - 1);
     }
     for (k = 0; k < coop_nlq; k++) {   /* a ladder's extras, when their turn comes and its climb is known */
