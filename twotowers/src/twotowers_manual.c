@@ -10301,9 +10301,9 @@ static void coop_spawnlog(const char *name, void (*gen)(void))
             ln[q] = 0; tt_dbg("[SPAWN]   looked up %08X vt %08X '%s'\n", lo, lo >= 0x10000u ? MEM32(lo) : 0, ln); } }
     }
 }
-/* the enemy multiplier's kinds: orcs that fight in melee -- Moria's lesser orcs and Helm's Deep's orcs, with or
- * without a shield (a playtest: "only multiply melee type of small orc and their variants, dont apply it for ranged
- * enemies"). Not archers, Uruk-hai, bombers, berserkers, scouts or trolls. Pooled kinds per level (TT_SPAWNLOG
+/* the enemy multiplier's kinds: every enemy that fights in melee -- orcs and lesser orcs with or without a shield,
+ * Uruk-hai (melee, scouts, berserkers, bombers) and the warg riders. Not archers, trolls, bosses (the Watcher, Lurtz,
+ * Sharku, the Uruk-hai captain) or the allies. TT_COOP_MULTORCS: the orcs only, as before. Pooled kinds per level (TT_SPAWNLOG
  * survey): Gates of Moria lesserOrcMelee 40, orcArcher 14; Rohan urukHaiBomber; the Deeping Wall urukHaiBomber,
  * OrcMelee, orcShield, UrukHaiMelee, urukHaiBerserker, urukHaiScout, troll; the Courtyard UrukHaiMelee, orcShield,
  * rWarrior, OrcMelee, lesserOrcShield, urukHaiBerserker, RohanArcher. TT_COOP_MULTALL: every kind, as before. */
@@ -10314,7 +10314,14 @@ static int coop_mult_kind(uint32_t a)
     if (getenv("TT_COOP_MULTALL")) return 1;
     if (a < 0x10000u || a >= 0x84000000u || MEM32(a) != 0x1741C0u) return 0;
     n = coop_nm(a);
-    return !_strnicmp(n, "lesserOrcMelee", 14) || !_strnicmp(n, "lesserOrcShield", 15) || !_strnicmp(n, "OrcMelee", 8) || !_strnicmp(n, "orcShield", 9);
+    if (getenv("TT_COOP_MULTORCS")) return !_strnicmp(n, "lesserOrcMelee", 14) || !_strnicmp(n, "lesserOrcShield", 15) || !_strnicmp(n, "OrcMelee", 8) || !_strnicmp(n, "orcShield", 9);
+    {   /* (a playtest: every melee kind but trolls and bosses, Helm's Deep's kamikaze bombers too) */
+        static const char *const k[] = { "lesserOrcMelee", "lesserOrcShield", "OrcMelee", "orcShield", "UrukHaiMelee", "urukHaiScout",
+            "urukHaiBerserker", "urukHaiBomber", "warg" };
+        int i;
+        for (i = 0; i < (int)(sizeof k / sizeof k[0]); i++) if (!_strnicmp(n, k[i], strlen(k[i]))) return 1;
+        return 0;
+    }
 }
 /* a spawner's next ready character: its ready list (+0x3D0: count, +4 the first node, +8 the last; a node's +0xC is
  * the character), which 0x930F0 takes the first of (0xD0990) */
@@ -10323,17 +10330,27 @@ static uint32_t coop_spawner_next(uint32_t sp)
     uint32_t hd = MEM32(sp + 0x3D4);
     return (int32_t)MEM32(sp + 0x3D0) > 0 && hd >= 0x10000u && hd < 0x84000000u ? MEM32(hd + 0xC) : 0;
 }
+/* a spawner: class 0x174B60. Helm's Deep's siege ladders (0x174A90, 2-4 lesser orcs each) keep the same ready and spawned
+ * lists, and their send out (0x92A40) calls the spawner's 0x930F0, but an extra sent through it never climbs: it stood at
+ * the ladder's foot for good, sent with the script's own or 5 s after (bot runs), while the script's own went up to the
+ * wall. So ladders are not multiplied; TT_COOP_LADDERMULT: they are (research) */
+static int coop_is_spawner(uint32_t sp)
+{
+    return sp >= 0x10000u && sp < 0x84000000u && (MEM32(sp) == 0x174B60u || (MEM32(sp) == 0x174A90u && getenv("TT_COOP_LADDERMULT")));
+}
 /* @SpawnAnObject: the level's script asks a spawner (the object running it) for one; in co-op the spawner sends out
  * up to (multiplier - 1) more from its ready list (its vtable +0xC4, 0x930F0, as the command does), each one only if
  * it is of a multiplied kind (coop_mult_kind) */
 static int coop_enemy_mult(void);
+static struct { uint32_t a, t; } coop_xtr[32]; static int coop_nxtr;   /* (testing, TT_SPAWNLOG) the extras sent out, followed for 30 s */
 extern void sub_000AB520_gen(void); void sub_000AB520(void)
 {
     uint32_t sp = coop_mode() ? tt_gcall(0x0009E180u, 0, 0, NULL) : 0, ra = eax;
     int m, i;
     coop_spawnlog("SpawnAnObject", sub_000AB520_gen);
-    if (!sp || sp < 0x10000u || MEM32(sp) != 0x174B60u || getenv("TT_COOP_MULTNOSPAWN")) return;
+    if (!coop_is_spawner(sp) || getenv("TT_COOP_MULTNOSPAWN")) return;
     ra = eax; m = coop_enemy_mult();
+    if (getenv("TT_SPAWNLOG")) { static int n; if (n++ < 80) tt_dbg("[COOPMULT] @SpawnAnObject on %08X: %d ready, %d spawned, next '%s'\n", sp, (int32_t)MEM32(sp + 0x3D0), (int32_t)MEM32(sp + 0x3DC), coop_spawner_next(sp) ? coop_nm(coop_spawner_next(sp)) : "-"); }
     for (i = 1; i < m && (int32_t)MEM32(sp + 0x3D0) > 1; i++) {   /* (one always left ready for the script: its own next @SpawnAnObject finding the
         * list empty ended that spawner's loop -- at the cave troll the orcs stopped coming within a minute with the extras, and came all
         * along without them: 3-8 spawns every 10 s for 200 s, bot runs) */
@@ -10342,6 +10359,7 @@ extern void sub_000AB520_gen(void); void sub_000AB520(void)
         got = tt_gcall(MEM32(MEM32(sp) + 0xC4u), sp, 1, &v);
         { static int n; if (n++ < 60) tt_dbg("[COOPMULT] @SpawnAnObject on %08X: extra %d of %d sent out %08X '%s'\n", sp, i, m - 1, got, got ? coop_nm(got) : "-"); }
         if (!got) break;
+        if (getenv("TT_SPAWNLOG") && coop_nxtr < 32) { coop_xtr[coop_nxtr].a = got; coop_xtr[coop_nxtr].t = coop_now(); coop_nxtr++; }
     }
     eax = ra;
 }
@@ -10368,7 +10386,7 @@ extern void sub_000A6480_gen(void); void sub_000A6480(void)
     coop_spawnlog("AddToSpawnPool", sub_000A6480_gen);
     if (!coop_mode() || eax != 1) return;
     {   uint32_t sp = 0, who = 0; int k;
-        for (i = n0; i < coop_lkn && i < n0 + 4; i++) { uint32_t o = coop_lk[i & 63].obj; if (o < 0x10000u) continue; if (MEM32(o) == 0x174B60u && !sp) sp = o; else if (MEM32(o) == 0x1741C0u && !who) who = o; }
+        for (i = n0; i < coop_lkn && i < n0 + 4; i++) { uint32_t o = coop_lk[i & 63].obj; if (o < 0x10000u) continue; if (coop_is_spawner(o) && !sp) sp = o; else if (MEM32(o) == 0x1741C0u && !who) who = o; }
         if (!sp || !who) return;
         for (k = 0; k < coop_npool; k++) if (coop_pool[k].who == who) { coop_pool[k].spawner = sp; return; }
         if (coop_npool < 512) { coop_pool[coop_npool].spawner = sp; coop_pool[coop_npool].who = who; coop_pool[coop_npool].dead_t = 0; coop_pool[coop_npool].revived = 0; coop_pool[coop_npool].pend = 0; coop_pool[coop_npool].sent = 0; coop_npool++; }
@@ -10388,7 +10406,7 @@ static void coop_pool_frame(void)
         if (coop_pool[k].pend && (MEM32(a + 0x110) & 0x200000u)) {   /* back in the ready list: the spawner sends one out now (its vtable +0xC4, as @SpawnAnObject does; the level's script spawns in bursts and may not ask again) */
             uint32_t sp = coop_pool[k].spawner, v = 0, got;
             coop_pool[k].pend = 0;
-            if (sp >= 0x10000u && MEM32(sp) == 0x174B60u && !getenv("TT_COOP_MULTNOSPAWN") && (int32_t)MEM32(sp + 0x3D0) > 1 && coop_mult_kind(coop_spawner_next(sp))) {   /* (one left ready, as above) */
+            if (coop_is_spawner(sp) && !getenv("TT_COOP_MULTNOSPAWN") && (int32_t)MEM32(sp + 0x3D0) > 1 && coop_mult_kind(coop_spawner_next(sp))) {   /* (one left ready, as above) */
                 got = tt_gcall(MEM32(MEM32(sp) + 0xC4u), sp, 1, &v);
                 if (got >= 0x10000u) MEM8(got + 0x3B8) = 0;
                 coop_pool[k].sent = got;   /* (left set, the spawner's next update took him straight back into its pool, hidden; observed) */
@@ -10404,6 +10422,8 @@ static void coop_pool_frame(void)
         MEM8(a + 0x3B8) = 1; coop_pool[k].revived++; coop_pool[k].dead_t = 0; coop_pool[k].pend = 1;
         tt_dbg("[COOPMULT] %08X '%s' back to spawner %08X's pool (revival %d of %d)\n", a, coop_nm(a), coop_pool[k].spawner, coop_pool[k].revived, m - 1);
     }
+    if (getenv("TT_SPAWNLOG")) { static uint32_t xt; if (now - xt > 3000) { xt = now; for (k = 0; k < coop_nxtr; k++) { uint32_t a = coop_xtr[k].a; if (now - coop_xtr[k].t > 30000u || a < 0x10000u) continue;
+        tt_dbg("[COOPMULT] extra %08X '%s' %u s out: hp %d state %u +110 %08X at %.1f %.1f %.1f\n", a, coop_nm(a), (now - coop_xtr[k].t) / 1000u, (int32_t)MEM32(a + 0x2FC), MEM32(a + 0x408), MEM32(a + 0x110), MEMF(a + 0xF0), MEMF(a + 0xF4), MEMF(a + 0xF8)); } } }
     if (getenv("TT_SPAWNLOG") && now - lt > 5000) {   /* (testing) the pooled characters' health and revivals */
         int alive = 0, dead = 0, rv = 0; lt = now;
         for (k = 0; k < coop_npool; k++) { uint32_t a = coop_pool[k].who; if (a < 0x10000u) continue; if ((int32_t)MEM32(a + 0x2FC) > 0) alive++; else dead++; rv += coop_pool[k].revived; }
