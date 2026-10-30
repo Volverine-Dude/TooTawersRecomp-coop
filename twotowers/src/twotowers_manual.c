@@ -9865,12 +9865,16 @@ static void coop_watch50(const char *where)   /* (research) when the twin's and 
         if (v != last[i]) { uint32_t k, cs[8] = { 0 }; int m = 0; for (k = 0; k < 160 && m < 8; k += 4) { uint32_t x = MEM32(esp + k); if (x >= 0x12000u && x < 0x170000u) cs[m++] = x; }
             tt_dbg("[COOPW50] %s +50 %08X -> %08X (vt %08X) seen in %s; stack code %X %X %X %X %X %X %X %X\n", i ? "player 1" : "twin", last[i], v, v >= 0x10000u ? MEM32(v) : 0, where, cs[0], cs[1], cs[2], cs[3], cs[4], cs[5], cs[6], cs[7]); last[i] = v; } }
 }
+static uint32_t coop_lad_force, coop_lad_watch, coop_lad_watch_t, coop_lad_watch2, coop_lad_watch2_t;   /* (a ladder's extra climbing, see coop_ladarg; research: the script's own after his dismount) */
 extern void sub_000B4690_gen(void);
 void sub_000B4690(void)
 {
     uint32_t id = MEM32(esp + 4), ra = MEM32(esp);
     if (coop_mode() == 3) coop_watch50("B4690 pre");
     sub_000B4690_gen();
+    if (coop_lad_force && eax >= 0x10000u && eax < 0x84000000u && MEM32(eax) == 0x1741C0u) eax = coop_lad_force;   /* (a ladder's extra climbing: coop_ladarg) */
+    if (coop_lad_watch && eax == coop_lad_watch && coop_now() - coop_lad_watch_t < 15000u) { static int n; if (n++ < 200) tt_dbg("[COOPMULT]   the script's ladder orc %08X looked up from %06X, %u ms after his @ClimbLadder\n", eax, ra, coop_now() - coop_lad_watch_t); }   /* (research, TT_SPAWNLOG) */
+    if (coop_lad_watch2 && eax == coop_lad_watch2 && coop_now() - coop_lad_watch2_t < 15000u) { static int n; if (n++ < 200) tt_dbg("[COOPMULT]   the extra ladder orc %08X looked up from %06X, %u ms after his @ClimbLadder\n", eax, ra, coop_now() - coop_lad_watch2_t); }
     { extern void tt_coop_ispw_lookup(uint32_t, uint32_t); tt_coop_ispw_lookup(ra, eax); }
     if (coop_in_obb && eax >= 0x10000u) coop_obb_obj = eax;
     if (coop_mode()) { coop_lk[coop_lkn & 63].ra = ra; coop_lk[coop_lkn & 63].obj = eax; coop_lk[coop_lkn & 63].id = id; coop_lkn++; }
@@ -10330,13 +10334,36 @@ static uint32_t coop_spawner_next(uint32_t sp)
     uint32_t hd = MEM32(sp + 0x3D4);
     return (int32_t)MEM32(sp + 0x3D0) > 0 && hd >= 0x10000u && hd < 0x84000000u ? MEM32(hd + 0xC) : 0;
 }
-/* a spawner: class 0x174B60. Helm's Deep's siege ladders (0x174A90, 2-4 lesser orcs each) keep the same ready and spawned
- * lists, and their send out (0x92A40) calls the spawner's 0x930F0, but an extra sent through it never climbs: it stood at
- * the ladder's foot for good, sent with the script's own or 5 s after (bot runs), while the script's own went up to the
- * wall. So ladders are not multiplied; TT_COOP_LADDERMULT: they are (research) */
+/* a spawner: class 0x174B60, or Helm's Deep's siege ladders (0x174A90, 2-4 lesser orcs each: the same ready and spawned
+ * lists; their send out 0x92A40 is the spawner's 0x930F0, the one sent kept at the ladder's +0x4D4). TT_COOP_NOLADDERMULT:
+ * ladders not multiplied */
 static int coop_is_spawner(uint32_t sp)
 {
-    return sp >= 0x10000u && sp < 0x84000000u && (MEM32(sp) == 0x174B60u || (MEM32(sp) == 0x174A90u && getenv("TT_COOP_LADDERMULT")));
+    return sp >= 0x10000u && sp < 0x84000000u && (MEM32(sp) == 0x174B60u || (MEM32(sp) == 0x174A90u && !getenv("TT_COOP_NOLADDERMULT")));
+}
+/* a ladder's extras. Sent out alone, an orc stands at the ladder's foot for good: the level's script makes its own climb
+ * with @ClimbLadder (0xADC30: the orc's name, then 7 numbers, the ladder's ends) right after @SpawnAnObject, and 2.7 s in
+ * gives him @SetAnimOrientation, @PassBrain (his fighting brain), @SetMotionState, @SetInvisible and @IncHelmsDeepHUD,
+ * then @DismountLadder at the top (3.6 s); after that he fights by his own brain. The extras, which the script doesn't
+ * know, get the same: the script's commands on its first climber of each ladder are kept with their arguments and times
+ * (a script call's arguments: 8-byte slots from its +0x10, its +0 their end, read by 0x9F2A0 / 0x9F2E0), and each extra
+ * goes out after the one before it (TT_COOP_LADDERDELAY ms, 5 s) and is given them again at the same times, on copies of
+ * the arguments, the orc lookup (0xB4690) answering him. @IncHelmsDeepHUD (the wall's count of orcs over it) is left
+ * out: an extra doesn't count toward the wall falling */
+#define COOP_LADSEQ 8
+static struct { uint32_t lad, climber, climb_t; int nseq, done; struct { uint32_t fn, dt, hdr[8], slot[16]; int ns; } seq[COOP_LADSEQ]; } coop_ladarg[48]; static int coop_nladarg;
+static struct { uint32_t a, lad, t; int next; float z0; } coop_ladup[32]; static int coop_nladup;
+static struct { uint32_t lad, due; } coop_lq[64]; static int coop_nlq;
+static uint32_t coop_lad_mem;
+static void coop_lad_cmd(uint32_t fn, const uint32_t *hdr, const uint32_t *slot, int nslot, uint32_t who)   /* a ladder command run again for an extra */
+{
+    uint32_t c = coop_lad_mem, q;
+    if (!c) { extern uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment); c = coop_lad_mem = xbox_ContiguousAlloc(0x100u, 16u); }
+    if (!c) return;
+    for (q = 0; q < 8; q++) MEM32(c + q * 4) = hdr[q];
+    for (q = 0; q < (uint32_t)nslot; q++) MEM32(c + 0x40 + q * 4) = slot[q];
+    MEM32(c + 0x10) = c + 0x40; MEM32(c) = c + 0x40 + (uint32_t)nslot * 4u;
+    coop_lad_force = who; q = c; tt_gcall(fn, 0, 1, &q); coop_lad_force = 0;
 }
 /* @SpawnAnObject: the level's script asks a spawner (the object running it) for one; in co-op the spawner sends out
  * up to (multiplier - 1) more from its ready list (its vtable +0xC4, 0x930F0, as the command does), each one only if
@@ -10351,6 +10378,11 @@ extern void sub_000AB520_gen(void); void sub_000AB520(void)
     if (!coop_is_spawner(sp) || getenv("TT_COOP_MULTNOSPAWN")) return;
     ra = eax; m = coop_enemy_mult();
     if (getenv("TT_SPAWNLOG")) { static int n; if (n++ < 80) tt_dbg("[COOPMULT] @SpawnAnObject on %08X: %d ready, %d spawned, next '%s'\n", sp, (int32_t)MEM32(sp + 0x3D0), (int32_t)MEM32(sp + 0x3DC), coop_spawner_next(sp) ? coop_nm(coop_spawner_next(sp)) : "-"); }
+    if (MEM32(sp) == 0x174A90u) {
+        uint32_t d = getenv("TT_COOP_LADDERDELAY") ? (uint32_t)atoi(getenv("TT_COOP_LADDERDELAY")) : 5000u;
+        for (i = 1; i < m && coop_nlq < 64; i++) { coop_lq[coop_nlq].lad = sp; coop_lq[coop_nlq].due = coop_now() + d * (uint32_t)i; coop_nlq++; }
+        eax = ra; return;
+    }
     for (i = 1; i < m && (int32_t)MEM32(sp + 0x3D0) > 1; i++) {   /* (one always left ready for the script: its own next @SpawnAnObject finding the
         * list empty ended that spawner's loop -- at the cave troll the orcs stopped coming within a minute with the extras, and came all
         * along without them: 3-8 spawns every 10 s for 200 s, bot runs) */
@@ -10380,6 +10412,41 @@ static int coop_enemy_mult(void)
     else m = d == 0 ? 1 : d >= 2 ? 3 : 2;
     return m < 1 ? 1 : m > 3 ? 3 : m;
 }
+static void coop_lad_keep(uint32_t fn, uint32_t ctx, unsigned n0)   /* a ladder command the script gave its climber: kept */
+{
+    unsigned i;
+    if (coop_lad_force || !coop_mode() || ctx < 0x10000u || ctx >= 0x84000000u) return;
+    for (i = n0; i < coop_lkn && i < n0 + 4; i++) {
+        uint32_t o = coop_lk[i & 63].obj, b = MEM32(ctx + 0x10); int k, j, q, ns;
+        if (o < 0x10000u || MEM32(o) != 0x1741C0u) continue;
+        if (fn == 0x000ADC30u) {   /* @ClimbLadder: the climber, his ladder from the pools */
+            for (k = 0; k < coop_npool && coop_pool[k].who != o; k++) ;
+            if (k == coop_npool || MEM32(coop_pool[k].spawner) != 0x174A90u) return;
+            for (j = 0; j < coop_nladarg && coop_ladarg[j].lad != coop_pool[k].spawner; j++) ;
+            if (j == coop_nladarg) { if (j == 48) return; coop_nladarg++; coop_ladarg[j].done = 0; }
+            if (coop_ladarg[j].done) return;   /* (kept already) */
+            coop_ladarg[j].lad = coop_pool[k].spawner; coop_ladarg[j].climber = o; coop_ladarg[j].climb_t = coop_now(); coop_ladarg[j].nseq = 0;
+            if (getenv("TT_SPAWNLOG") && coop_now() - coop_lad_watch_t > 15000u) { coop_lad_watch = o; coop_lad_watch_t = coop_now(); }
+        } else {
+            for (j = 0; j < coop_nladarg && (coop_ladarg[j].done || coop_ladarg[j].climber != o); j++) ;
+            if (j == coop_nladarg || coop_ladarg[j].nseq >= COOP_LADSEQ || coop_now() - coop_ladarg[j].climb_t > 20000u) return;
+        }
+        k = coop_ladarg[j].nseq++;
+        ns = (int)((MEM32(ctx) - b) / 4u); if (ns < 0 || ns > 16 || b < 0x10000u) ns = 0;
+        coop_ladarg[j].seq[k].fn = fn; coop_ladarg[j].seq[k].dt = coop_now() - coop_ladarg[j].climb_t; coop_ladarg[j].seq[k].ns = ns;
+        for (q = 0; q < 8; q++) coop_ladarg[j].seq[k].hdr[q] = MEM32(ctx + q * 4u);
+        for (q = 0; q < ns; q++) coop_ladarg[j].seq[k].slot[q] = MEM32(b + q * 4u);
+        if (fn == 0x000ADFC0u) { coop_ladarg[j].done = 1; coop_ladarg[j].climber = 0; }
+        { static int n; if (n++ < 60) tt_dbg("[COOPMULT] ladder %08X: the script's climber %08X '%s' given command %06X at %u ms (%d words), kept; at %.1f %.1f %.1f\n", coop_ladarg[j].lad, o, coop_nm(o), fn, coop_ladarg[j].seq[k].dt, ns, MEMF(o + 0xF0), MEMF(o + 0xF4), MEMF(o + 0xF8)); }
+        return;
+    }
+}
+extern void sub_000ADC30_gen(void); void sub_000ADC30(void) { uint32_t ctx = MEM32(esp + 4); unsigned n0 = coop_lkn; sub_000ADC30_gen(); coop_lad_keep(0x000ADC30u, ctx, n0); }   /* @ClimbLadder */
+extern void sub_000A9350_gen(void); void sub_000A9350(void) { uint32_t ctx = MEM32(esp + 4); unsigned n0 = coop_lkn; sub_000A9350_gen(); coop_lad_keep(0x000A9350u, ctx, n0); }   /* @SetAnimOrientation */
+extern void sub_000A50F0_gen(void); void sub_000A50F0(void) { uint32_t ctx = MEM32(esp + 4); unsigned n0 = coop_lkn; sub_000A50F0_gen(); coop_lad_keep(0x000A50F0u, ctx, n0); }   /* @PassBrain */
+extern void sub_000A5080_gen(void); void sub_000A5080(void) { uint32_t ctx = MEM32(esp + 4); unsigned n0 = coop_lkn; sub_000A5080_gen(); coop_lad_keep(0x000A5080u, ctx, n0); }   /* @SetMotionState */
+extern void sub_000AA3F0_gen(void); void sub_000AA3F0(void) { uint32_t ctx = MEM32(esp + 4); unsigned n0 = coop_lkn; sub_000AA3F0_gen(); coop_lad_keep(0x000AA3F0u, ctx, n0); }   /* @SetInvisible */
+extern void sub_000ADFC0_gen(void); void sub_000ADFC0(void) { uint32_t ctx = MEM32(esp + 4); unsigned n0 = coop_lkn; sub_000ADFC0_gen(); coop_lad_keep(0x000ADFC0u, ctx, n0); }   /* @DismountLadder */
 extern void sub_000A6480_gen(void); void sub_000A6480(void)
 {
     unsigned n0 = coop_lkn, i;
@@ -10406,7 +10473,7 @@ static void coop_pool_frame(void)
         if (coop_pool[k].pend && (MEM32(a + 0x110) & 0x200000u)) {   /* back in the ready list: the spawner sends one out now (its vtable +0xC4, as @SpawnAnObject does; the level's script spawns in bursts and may not ask again) */
             uint32_t sp = coop_pool[k].spawner, v = 0, got;
             coop_pool[k].pend = 0;
-            if (coop_is_spawner(sp) && !getenv("TT_COOP_MULTNOSPAWN") && (int32_t)MEM32(sp + 0x3D0) > 1 && coop_mult_kind(coop_spawner_next(sp))) {   /* (one left ready, as above) */
+            if (coop_is_spawner(sp) && MEM32(sp) == 0x174B60u && !getenv("TT_COOP_MULTNOSPAWN") && (int32_t)MEM32(sp + 0x3D0) > 1 && coop_mult_kind(coop_spawner_next(sp))) {   /* (one left ready, as above) */
                 got = tt_gcall(MEM32(MEM32(sp) + 0xC4u), sp, 1, &v);
                 if (got >= 0x10000u) MEM8(got + 0x3B8) = 0;
                 coop_pool[k].sent = got;   /* (left set, the spawner's next update took him straight back into its pool, hidden; observed) */
@@ -10421,6 +10488,39 @@ static void coop_pool_frame(void)
         if (now - coop_pool[k].dead_t < (getenv("TT_COOP_MULTDELAY") ? (uint32_t)atoi(getenv("TT_COOP_MULTDELAY")) : 10000u) || coop_pool[k].revived >= m - 1) continue;   /* (4 s: revived during his death sequence, whose end set +0x3B8 again, and the spawner took him back: observed) */
         MEM8(a + 0x3B8) = 1; coop_pool[k].revived++; coop_pool[k].dead_t = 0; coop_pool[k].pend = 1;
         tt_dbg("[COOPMULT] %08X '%s' back to spawner %08X's pool (revival %d of %d)\n", a, coop_nm(a), coop_pool[k].spawner, coop_pool[k].revived, m - 1);
+    }
+    for (k = 0; k < coop_nlq; k++) {   /* a ladder's extras, when their turn comes and its climb is known */
+        uint32_t lad = coop_lq[k].lad, v = 0, got = 0; int j;
+        if ((int32_t)(now - coop_lq[k].due) < 0) continue;
+        for (j = 0; j < coop_nladarg && coop_ladarg[j].lad != lad; j++) ;
+        if ((j == coop_nladarg || !coop_ladarg[j].done) && now - coop_lq[k].due < 30000u) continue;
+        if (j < coop_nladarg && coop_ladarg[j].done && coop_is_spawner(lad) && (int32_t)MEM32(lad + 0x3D0) > 1 && coop_mult_kind(coop_spawner_next(lad))) {
+            got = tt_gcall(MEM32(MEM32(lad) + 0xC4u), lad, 1, &v);
+            if (got >= 0x10000u) {
+                MEM8(got + 0x3B8) = 0;   /* (one recycled with it still set went straight back into the ladder's pool, hidden on it: observed) */
+                if (getenv("TT_SPAWNLOG") && !coop_lad_watch2) { coop_lad_watch2 = got; coop_lad_watch2_t = now; }
+                if (coop_nladup < 32) { coop_ladup[coop_nladup].a = got; coop_ladup[coop_nladup].lad = lad; coop_ladup[coop_nladup].t = now; coop_ladup[coop_nladup].next = 0; coop_ladup[coop_nladup].z0 = MEMF(got + 0xF8); coop_nladup++; }
+                if (getenv("TT_SPAWNLOG") && coop_nxtr < 32) { coop_xtr[coop_nxtr].a = got; coop_xtr[coop_nxtr].t = now; coop_nxtr++; }
+            }
+        }
+        { static int n; if (n++ < 60) tt_dbg("[COOPMULT] ladder %08X: extra %08X '%s'%s\n", lad, got, got ? coop_nm(got) : "-", got ? ", to climb" : ""); }
+        coop_lq[k--] = coop_lq[--coop_nlq];
+    }
+    for (k = 0; k < coop_nladup; k++) {   /* extras on a ladder: the script's commands at their times */
+        uint32_t a = coop_ladup[k].a; int j;
+        for (j = 0; j < coop_nladarg && coop_ladarg[j].lad != coop_ladup[k].lad; j++) ;
+        if (j == coop_nladarg || MEM32(a) != 0x1741C0u || ((int32_t)MEM32(a + 0x2FC) <= 0 && now - coop_ladup[k].t > 1000u)) { coop_ladup[k--] = coop_ladup[--coop_nladup]; continue; }   /* (one recycled from the dead comes out with no health for a moment: observed) */
+        while (coop_ladup[k].next < coop_ladarg[j].nseq && now - coop_ladup[k].t >= coop_ladarg[j].seq[coop_ladup[k].next].dt) {
+            int q = coop_ladup[k].next++;
+            coop_lad_cmd(coop_ladarg[j].seq[q].fn, coop_ladarg[j].seq[q].hdr, coop_ladarg[j].seq[q].slot, coop_ladarg[j].seq[q].ns, a);
+            { static int n; if (n++ < 2000 && getenv("TT_SPAWNLOG")) tt_dbg("[COOPMULT] ladder %08X: extra %08X given command %06X at %u ms; at %.1f %.1f %.1f\n", coop_ladup[k].lad, a, coop_ladarg[j].seq[q].fn, now - coop_ladup[k].t, MEMF(a + 0xF0), MEMF(a + 0xF4), MEMF(a + 0xF8)); }
+        }
+        if (MEMF(a + 0xF8) < coop_ladup[k].z0 - 30.0f) {   /* fallen through the ground (once in 23, a recycled one off his dismount): back to the ladder's pool, as the game recycles */
+            MEM8(a + 0x3B8) = 1;
+            tt_dbg("[COOPMULT] ladder %08X: extra %08X fell to %.1f (sent at %.1f), back to its pool\n", coop_ladup[k].lad, a, MEMF(a + 0xF8), coop_ladup[k].z0);
+            coop_ladup[k--] = coop_ladup[--coop_nladup]; continue;
+        }
+        if (coop_ladup[k].next >= coop_ladarg[j].nseq && now - coop_ladup[k].t > 15000u) coop_ladup[k--] = coop_ladup[--coop_nladup];
     }
     if (getenv("TT_SPAWNLOG")) { static uint32_t xt; if (now - xt > 3000) { xt = now; for (k = 0; k < coop_nxtr; k++) { uint32_t a = coop_xtr[k].a; if (now - coop_xtr[k].t > 30000u || a < 0x10000u) continue;
         tt_dbg("[COOPMULT] extra %08X '%s' %u s out: hp %d state %u +110 %08X at %.1f %.1f %.1f\n", a, coop_nm(a), (now - coop_xtr[k].t) / 1000u, (int32_t)MEM32(a + 0x2FC), MEM32(a + 0x408), MEM32(a + 0x110), MEMF(a + 0xF0), MEMF(a + 0xF4), MEMF(a + 0xF8)); } } }
