@@ -4397,6 +4397,47 @@ static int vs_keep_enemy(uint32_t rec)
     tt_dbg("[VSFOE] %s kept (%d)\n", (const char *)XBOX_PTR(rec + 8), vs_enemy_kept);
     return 1;
 }
+/* bigger spawner pools (the enemy multiplier). Gates of Moria's spawners hold 2 orcs each and the script takes both, so
+ * nothing was left to multiply (a playtest: "didnt any difference on Gates of Moria, maybe increasing the pool of
+ * enemies"). Nothing can be built in play, so during the load each multiplied enemy's placement record is built again
+ * (multiplier - 1) times, as player 2's twin is: copies sharing its name. The level's set-up of the original (at Gates:
+ * @SetEnemyID, @AttachToBone with its weapon, @SetAnimMachine, @SetBrainMachine, @AddToSpawnPool, all by name) is run
+ * again for each copy with the lookup answering the copy, and a copy of the weapon of its own (coop_oc_weapon); its
+ * spawner's pool then holds the copies too (up to 9). In play, inside a copy's own brain messages and events, a lookup of
+ * the original or its weapon answers the copy. Levels: Gates of Moria (2); TT_COOP_CLONELEVELS="2,11" others,
+ * TT_COOP_NOCLONES off, TT_COOP_CLONES copies each, TT_COOP_CLONEMAX all copies (80) */
+#define COOP_NOC 160
+static struct { uint32_t orig, clone, worig, wclone; } coop_oc[COOP_NOC]; static int coop_noc;
+static uint32_t coop_oc_force, coop_oc_world; static int coop_oc_replaying, coop_oc_cur = -1, coop_oc_fi = -1;
+void coop_oc_reset(void) { coop_noc = 0; coop_oc_force = 0; coop_oc_cur = coop_oc_fi = -1; coop_oc_replaying = 0; }
+static int coop_mult_kind(uint32_t a);
+static int coop_enemy_mult(void);
+static uint32_t coop_oc_weapon(uint32_t wo, int ci);
+static int coop_oc_level(void)
+{
+    const char *e = getenv("TT_COOP_CLONELEVELS"); char b[16], l[128]; unsigned lv = MEM32(0x1BB2A4u);
+    if (getenv("TT_COOP_NOCLONES") || !coop_mode() || tt_vs_on()) return 0;
+    if (!e) return lv == 2u;
+    snprintf(b, sizeof b, ",%u,", lv); snprintf(l, sizeof l, ",%s,", e); return strstr(l, b) != NULL;
+}
+static int coop_oc_find(uint32_t a) { int i; for (i = 0; i < coop_noc; i++) if (coop_oc[i].clone == a) return i; return -1; }
+static void coop_oc_build(uint32_t w, uint32_t rec, uint32_t key, uint32_t orig)
+{
+    int n = coop_enemy_mult() - 1, i, mx = getenv("TT_COOP_CLONEMAX") ? atoi(getenv("TT_COOP_CLONEMAX")) : 80;
+    uint32_t sp = esp, ra = eax, rc = ecx, rd = edx;
+    if (getenv("TT_COOP_CLONES")) n = atoi(getenv("TT_COOP_CLONES"));
+    coop_oc_world = w;
+    for (i = 0; i < n && coop_noc < COOP_NOC && coop_noc < mx; i++) {
+        uint32_t c;
+        coop_last_char = 0;
+        PUSH32(esp, key); PUSH32(esp, rec); PUSH32(esp, 0x000F5BC0u); ecx = w; sub_000F5BC0_gen();   /* ret 8 */
+        c = coop_last_char; esp = sp;
+        if (c < 0x10000u || c == orig || MEM32(c) != 0x1741C0u) { tt_dbg("[COOPCLONE] building a copy of %08X '%s' gave %08X: no more\n", orig, coop_nm(orig), c); break; }
+        coop_oc[coop_noc].orig = orig; coop_oc[coop_noc].clone = c; coop_oc[coop_noc].worig = coop_oc[coop_noc].wclone = 0; coop_noc++;
+        { static int nl; if (nl++ < 200) tt_dbg("[COOPCLONE] copy %d of %08X '%s': %08X (%d copies in all)\n", i + 1, orig, coop_nm(orig), c, coop_noc); }
+    }
+    esp = sp; eax = ra; ecx = rc; edx = rd; coop_last_char = orig;
+}
 void sub_000F5BC0(void)
 {
     uint32_t w = ecx, rec = MEM32(esp + 4), key = MEM32(esp + 8), sel = MEM32(0x1BB354u);
@@ -4420,6 +4461,8 @@ void sub_000F5BC0(void)
         tt_dbg("[VSPICK] record %08X \"%.24s\" key %08X:%s\n", rec, (const char *)XBOX_PTR(rec + 8), key, b); }
     coop_last_char = 0;
     sub_000F5BC0_gen();
+    if (rec >= 0x10000u && coop_last_char >= 0x10000u && MEM32(coop_last_char) == 0x1741C0u && MEM32(coop_last_char + 0x114) != 1u && coop_mult_kind(coop_last_char) && coop_oc_level()) {
+        uint32_t sv = eax; coop_oc_build(w, rec, key, coop_last_char); eax = sv; }
     if (rec >= 0x10000u && MEM32(rec) == 14u && eax >= 0x10000u) { extern void tt_vs_note_pickup(uint32_t obj, uint32_t rec); uint32_t sv = eax; tt_vs_note_pickup(eax, rec); eax = sv; }
     if (coop_mode() == 3 && !coop_rec && coop_last_char >= 0x10000u && MEM32(coop_last_char) == 0x1741C0u && MEM32(coop_last_char + 0x114) == 1) {
         coop_world = w; coop_rec = rec; coop_key = key; coop_hero_sel = sel; coop_first_char = coop_last_char;
@@ -4825,6 +4868,19 @@ static void coop_place(void)
          * TT_COOP_NOJUMPFOLLOW: off. */
         extern int tt_in_scene(void); extern int xbox_MoviePlaying(void);
         static uint32_t prev_p1; static float lx, ly;
+        if (getenv("TT_COOP_P1TRACK") && p1 >= 0x10000u && coop_p2_t0 && !tt_in_scene()) {   /* (bot test) player 1 walked along a route taken from a playtest log: "ms x y z" points, ms from player 2's take-over */
+            static float tr[512][4]; static int tn = -1, ti; uint32_t tt = coop_now() - coop_p2_t0;
+            if (tn < 0) { const char *c = getenv("TT_COOP_P1TRACK"); char *e; int q; tn = 0;   /* (the numbers in the variable, 4 a point) */
+                while (tn < 512 && *c) { for (q = 0; q < 4; q++) { tr[tn][q] = (float)strtod(c, &e); if (e == c) break; c = e; while (*c == ' ' || *c == ',' || *c == ';') c++; } if (q < 4) break; tn++; }
+                tt_dbg("[P1TRACK] %d points\n", tn); }
+            while (ti + 1 < tn && tr[ti + 1][0] <= (float)tt) ti++;
+            if (tn > 1 && ti + 1 < tn && (float)tt >= tr[0][0]) {
+                float f = ((float)tt - tr[ti][0]) / (tr[ti + 1][0] - tr[ti][0]); int q;
+                if (f < 0) f = 0; if (f > 1) f = 1;
+                for (q = 0; q < 3; q++) MEMF(p1 + 0xF0 + 4 * q) = MEMF(p1 + 0x90 + 4 * q) = tr[ti][q + 1] + f * (tr[ti + 1][q + 1] - tr[ti][q + 1]);
+                { static uint32_t lt; if (coop_now() - lt > 5000u) { lt = coop_now(); tt_dbg("[P1TRACK] t %u at %.1f %.1f %.1f (point %d of %d)\n", tt, MEMF(p1 + 0xF0), MEMF(p1 + 0xF4), MEMF(p1 + 0xF8), ti, tn); } }
+            }
+        }
         if (getenv("TT_COOP_TESTPARK") && p1 >= 0x10000u && coop_p2_t0) {   /* (bot test) player 1 parked off the map 6 s, as a Weathertop cutscene did (28 units off, 32 down, no pathmap), then back */
             static uint32_t t0, spm; static int st; static float sv[3]; uint32_t q, b = MEM32(p1 + 0x494);
             if (st == 0 && coop_now() - coop_p2_t0 > (uint32_t)atoi(getenv("TT_COOP_TESTPARK"))) { st = 1; t0 = coop_now(); for (q = 0; q < 3; q++) sv[q] = MEMF(p1 + 0xF0 + 4 * q); spm = MEM32(p1 + 0x2ECu); tt_dbg("[COOP2] test: player 1 parked off the map\n"); }
@@ -9566,8 +9622,9 @@ static int coop_twin_ev; static unsigned coop_twin_ev_n, coop_twin_ev_redir;
 extern void sub_000265D0_gen(void);
 void sub_000265D0(void)
 {
-    static int off = -1; int save = coop_twin_ev;
+    static int off = -1; int save = coop_twin_ev, ocs = coop_oc_cur;
     if (off < 0) off = getenv("TT_COOP_NOEVREDIRECT") != 0;
+    if (coop_noc && ecx >= 0x10000u && MEM32(ecx + 4) >= 0x10000u) { int ci = coop_oc_find(MEM32(ecx + 4)); if (ci >= 0) coop_oc_cur = ci; }   /* (a pool copy's event: coop_oc) */
     if (!off && coop_mode() == 3 && coop_p2 && coop_twin >= 0x10000u && ecx >= 0x10000u) {
         if (ecx == MEM32(coop_twin + 0x3D0)) { coop_twin_ev = 1; coop_twin_ev_n++; }
         else if (ecx == MEM32(coop_first_char + 0x3D0)) coop_twin_ev = 0;
@@ -9579,7 +9636,7 @@ void sub_000265D0(void)
             MEM32(coop_twin + 0x3D0), MEM32(coop_first_char + 0x3D0), ecx, ecx >= 0x10000u ? MEM32(ecx + 4) : 0); }
     }
     sub_000265D0_gen();
-    coop_twin_ev = save;
+    coop_twin_ev = save; coop_oc_cur = ocs;
 }
 static void coop_watch50(const char *where);
 /* 0x000922A0 (thiscall brain machine, class 0x171948; type, node; ret 8): the brain machine's message handler.
@@ -9590,8 +9647,11 @@ static unsigned coop_twin_bm_n, coop_bm_src[3];
 extern void sub_000922A0_gen(void);
 void sub_000922A0(void)
 {
-    static int off = -1, noswap = -1; int save = coop_twin_ev, sw = 0; uint32_t nd = MEM32(esp + 8);
+    static int off = -1, noswap = -1; int save = coop_twin_ev, sw = 0, ocs = coop_oc_cur; uint32_t nd = MEM32(esp + 8);
     extern int tt_coop_enter_ctx(void); extern void tt_coop_leave(void);
+    if (coop_noc && nd >= 0x10000u && nd < 0x84000000u) {   /* (a pool copy's brain message, from it or to it: its lookups answer it, coop_oc) */
+        int ci = coop_oc_find(MEM32(nd + 4)); if (ci < 0) ci = coop_oc_find(MEM32(nd + 8));
+        if (ci >= 0) coop_oc_cur = ci; else if (MEM32(nd + 4) >= 0x10000u || MEM32(nd + 8) >= 0x10000u) coop_oc_cur = -1; }
     if (off < 0) { off = getenv("TT_COOP_NOEVREDIRECT") != 0; noswap = getenv("TT_COOP_NOBRAINSWAP") != 0; }
     if (getenv("TT_COOP_PROPHITLOG") && nd >= 0x10000u && nd < 0x84000000u) {   /* (research) messages to a prop (an explosive barrel): type, source, its owner */
         uint32_t t = MEM32(nd + 8), s = MEM32(nd + 4), ty = MEM32(esp + 4) & 0xFFFFu; static int n;
@@ -9641,7 +9701,7 @@ void sub_000922A0(void)
     sub_000922A0_gen();
     if (coop_mode() == 3) coop_watch50("922A0 post");
     if (sw) tt_coop_leave();
-    coop_twin_ev = save;
+    coop_twin_ev = save; coop_oc_cur = ocs;
 }
 /* 0x0008FC60 (thiscall pickup; type, node; ret 8): a pickup's message handler. A touch (type 13, with its +0x3F8 bit 2)
  * runs 0x0008F960, which refills "the player" [0x43B15C] (health 0x9D400, arrows 0x9D460), so player 2's touches
@@ -9909,11 +9969,19 @@ void sub_000B4690(void)
     if (coop_mode() == 3) coop_watch50("B4690 pre");
     sub_000B4690_gen();
     if (coop_lad_force && eax >= 0x10000u && eax < 0x84000000u && MEM32(eax) == 0x1741C0u) eax = coop_lad_force;   /* (a ladder's extra climbing: coop_ladarg) */
+    {   int ci = coop_oc_fi >= 0 ? coop_oc_fi : coop_oc_cur;   /* (a spawner pool's copy: its set-up replayed, or its own messages: coop_oc) */
+        if (ci >= 0 && ci < coop_noc && eax >= 0x10000u) {
+            if (eax == coop_oc[ci].orig) eax = coop_oc[ci].clone;
+            else if (eax == coop_oc[ci].worig && coop_oc[ci].wclone) eax = coop_oc[ci].wclone;
+        }
+    }
     if (coop_lad_watch && eax == coop_lad_watch && coop_now() - coop_lad_watch_t < 15000u) { static int n; if (n++ < 200) tt_dbg("[COOPMULT]   the script's ladder orc %08X looked up from %06X, %u ms after his @ClimbLadder\n", eax, ra, coop_now() - coop_lad_watch_t); }   /* (research, TT_SPAWNLOG) */
     if (coop_lad_watch2 && eax == coop_lad_watch2 && coop_now() - coop_lad_watch2_t < 15000u) { static int n; if (n++ < 200) tt_dbg("[COOPMULT]   the extra ladder orc %08X looked up from %06X, %u ms after his @ClimbLadder\n", eax, ra, coop_now() - coop_lad_watch2_t); }
     { extern void tt_coop_ispw_lookup(uint32_t, uint32_t); tt_coop_ispw_lookup(ra, eax); }
     if (coop_in_obb && eax >= 0x10000u) coop_obb_obj = eax;
     if (coop_mode()) { coop_lk[coop_lkn & 63].ra = ra; coop_lk[coop_lkn & 63].obj = eax; coop_lk[coop_lkn & 63].id = id; coop_lkn++; }
+    if (getenv("TT_LOADLKLOG") && !coop_p2_t0 && eax >= 0x10000u && eax < 0x84000000u) {   /* (research) every lookup before play: the command's return address, the object */
+        static int n; uint32_t h = MEM32(eax + 0x18); if (n++ < 6000) tt_dbg("[LOADLK] %06X %08X vt %08X '%s'\n", ra, eax, MEM32(eax), h >= 0x10000u && h < 0x84000000u ? (const char *)XBOX_PTR(h) : "?"); }
     if (getenv("TT_COOP_BOSSCMDLOG") && eax >= 0x10000u && eax < 0x84000000u) {   /* (research) the script commands that look up a tentacle
          * or the Watcher: each (command's return address, object) the first time, with the object's state and flags, and
          * every 10 s the counts (the address maps to its handler through the command table, local/re/script_cmds.tsv) */
@@ -10103,6 +10171,31 @@ static void coop_own_machines(void)   /* each frame (coop_place): once a level *
         done_lv = coop_level_n; t0 = 0;
     }
 }
+static uint32_t coop_pool_count(uint32_t sp);
+/* a set-up command the level gave an enemy with pool copies: run again for each copy (coop_oc), set-up only */
+static void coop_oc_after(uint32_t fn, void (*call)(void), uint32_t vm, unsigned lk0)
+{
+    unsigned q; int i; uint32_t o = 0, wo = 0, sp0 = 0;
+    if (!coop_noc || coop_oc_replaying || coop_p2_t0 || vm < 0x10000u) return;
+    for (q = lk0; q < coop_lkn && q < lk0 + 6; q++) { uint32_t x = coop_lk[q & 63].obj; int k;
+        if (x < 0x10000u || x >= 0x84000000u) continue;
+        if (!o) for (k = 0; k < coop_noc; k++) if (coop_oc[k].orig == x) { o = x; break; }
+        if (!wo && MEM32(x) == 0x174980u) wo = x;
+        if (!sp0 && MEM32(x) == 0x174B60u) sp0 = x; }
+    if (!o) return;
+    for (i = 0; i < coop_noc; i++) if (coop_oc[i].orig == o) {
+        uint32_t sp = esp, ra = eax, rc = ecx, rd = edx;
+        if (fn == 0x000A6480u && sp0 && coop_pool_count(sp0) >= 9u) {   /* (a pool holds 9: the copy left out of it, hidden and off) */
+            uint32_t c = coop_oc[i].clone; MEM32(c + 0x110) = (MEM32(c + 0x110) | 0x200000u) & ~0x1000u;
+            tt_dbg("[COOPCLONE] %08X: spawner %08X '%s' full, the copy left out (hidden)\n", c, sp0, coop_nm(sp0)); continue; }
+        if (wo && fn == 0x000A0DB0u && !coop_oc[i].wclone) { coop_oc[i].worig = wo; coop_oc[i].wclone = coop_oc_weapon(wo, i); }
+        coop_oc_fi = i; coop_oc_replaying = 1;
+        PUSH32(esp, vm); PUSH32(esp, fn); call(); esp += 4;   /* cdecl (vm) */
+        coop_oc_replaying = 0; coop_oc_fi = -1;
+        { static int nl; if (nl++ < 300) tt_dbg("[COOPCLONE] command %06X replayed for %08X (copy of '%s'%s); esp %s\n", fn, coop_oc[i].clone, coop_nm(o), wo && fn == 0x000A0DB0u ? (coop_oc[i].wclone ? ", its own weapon" : ", no weapon copy") : "", esp == sp ? "balanced" : "NOT balanced"); }
+        esp = sp; eax = ra; ecx = rc; edx = rd;
+    }
+}
 static void coop_replay(uint32_t fn, const char *name, void (*gen)(void))
 {
     uint32_t vm = MEM32(esp + 4);
@@ -10185,6 +10278,11 @@ static void coop_replay(uint32_t fn, const char *name, void (*gen)(void))
         tt_dbg("[COOP2] script @%s replayed for the twin (returned %08X; esp %s)\n", name, eax, esp == sp ? "balanced" : "NOT balanced");
         if (!strcmp(name, "SetEnemyID")) coop_p2_own_type("@SetEnemyID replayed");
         esp = sp; eax = ra; ecx = rc; edx = rd;
+    }
+    if (coop_noc && !coop_oc_replaying && (fn == 0x000A6770u || fn == 0x000A0DB0u || fn == 0x000A0F30u || fn == 0x000A1840u)) {   /* (the pool copies' set-up: coop_oc) */
+        int sv_in = coop_in_attach; uint32_t sv_ch = coop_attach_child_seen; coop_in_attach = 0;
+        coop_oc_after(fn, gen, vm, mlk0);
+        coop_in_attach = sv_in; coop_attach_child_seen = sv_ch;
     }
 }
 extern void sub_000A6770_gen(void); void sub_000A6770(void) { coop_replay(0x000A6770u, "SetEnemyID", sub_000A6770_gen); }
@@ -10490,7 +10588,15 @@ extern void sub_000A50F0_gen(void); void sub_000A50F0(void) { uint32_t ctx = MEM
 extern void sub_000A5080_gen(void); void sub_000A5080(void) { uint32_t ctx = MEM32(esp + 4); unsigned n0 = coop_lkn; sub_000A5080_gen(); coop_lad_keep(0x000A5080u, ctx, n0); }   /* @SetMotionState */
 extern void sub_000AA3F0_gen(void); void sub_000AA3F0(void) { uint32_t ctx = MEM32(esp + 4); unsigned n0 = coop_lkn; sub_000AA3F0_gen(); coop_lad_keep(0x000AA3F0u, ctx, n0); }   /* @SetInvisible */
 extern void sub_000ADFC0_gen(void); void sub_000ADFC0(void) { uint32_t ctx = MEM32(esp + 4); unsigned n0 = coop_lkn; sub_000ADFC0_gen(); coop_lad_keep(0x000ADFC0u, ctx, n0); }   /* @DismountLadder */
+static void coop_a6480(void);
 extern void sub_000A6480_gen(void); void sub_000A6480(void)
+{
+    uint32_t vm = MEM32(esp + 4); unsigned n0 = coop_lkn;
+    coop_a6480();
+    if (coop_noc && !coop_oc_replaying) coop_oc_after(0x000A6480u, coop_a6480, vm, n0);   /* (the pool copies: coop_oc) */
+}
+static uint32_t coop_pool_count(uint32_t sp) { uint32_t n = 0; int k; for (k = 0; k < coop_npool; k++) if (coop_pool[k].spawner == sp) n++; return n; }
+static void coop_a6480(void)
 {
     unsigned n0 = coop_lkn, i;
     coop_spawnlog("AddToSpawnPool", sub_000A6480_gen);
@@ -11378,6 +11484,26 @@ static uint32_t coop_build_weapon_as(uint32_t child, int bone, int extra)
     else { static int full; if (!full++) tt_dbg("[COOPWEAPON] the record key table is full (%d)\n", COOP_NRECKEY); }
 }
 uint32_t coop_build_weapon_ext(uint32_t child) { return coop_build_weapon(child); }
+static uint32_t coop_oc_weapon(uint32_t wo, int ci)   /* a pool copy's own weapon: the original's record built again, renamed (coop_oc) */
+{
+    uint32_t h = MEM32(wo + 0x18), rec = h - 8, key = 0, m, k, n, w, sp = esp, ra = eax, rc = ecx, rd = edx; int i;
+    if (h < 0x10008u || h >= 0x84000000u || !coop_oc_world) return 0;
+    for (i = 0; i < coop_nreckey; i++) if (coop_reckey[i].rec == rec) { key = coop_reckey[i].key; break; }
+    if (i == coop_nreckey) { tt_dbg("[COOPCLONE] no loader key for weapon record %08X\n", rec); return 0; }
+    PUSH32(esp, 0x100u); PUSH32(esp, 0x000E6B50u); sub_000E6B50(); esp += 4; m = eax;
+    if (m < 0x10000u) { tt_dbg("[COOPCLONE] no memory for a weapon copy (0xE6B50 gave %08X)\n", m); esp = sp; eax = ra; ecx = rc; edx = rd; return 0; }
+    for (k = 0; k < 0x100; k += 4) MEM32(m + k) = MEM32(rec + k);
+    for (n = 0; n < 0x1C && MEM8(m + 8 + n); n++) ;
+    MEM8(m + 8 + n) = 'k' + (char)(ci % 16); MEM8(m + 9 + n) = 0;   /* weaponObj131 -> weaponObj131k.. */
+    coop_last_obj = 0;
+    PUSH32(esp, key ^ (0x00100000u + ((uint32_t)(ci & 0xFF) << 12))); PUSH32(esp, m); PUSH32(esp, 0x000F5BC0u); ecx = coop_oc_world; sub_000F5BC0_gen();   /* ret 8 */
+    w = coop_last_obj;
+    if (w < 0x10000u || MEM32(w) != MEM32(wo)) { tt_dbg("[COOPCLONE] building a copy of weapon %08X gave %08X\n", wo, w); esp = sp; eax = ra; ecx = rc; edx = rd; return 0; }
+    PUSH32(esp, 0x0008FFE0u); ecx = w; sub_0008FFE0();                                   /* init, as the loader's walk */
+    PUSH32(esp, w); PUSH32(esp, 0x000C5E20u); ecx = 0x43C5E8u; sub_000C5E20();           /* register (ret 4) */
+    esp = sp; eax = ra; ecx = rc; edx = rd;
+    return w;
+}
 /* (1.9.9, Versus) a random spot to start a match at: one of the level's own points on its ground -- its waypoints and spawners
  * (their placement records' +0x28), where the campaign's characters walk and come in -- on open ground (vs_union_walk). 0: none */
 static int vs_union_walk(float x, float y);
@@ -12097,7 +12223,7 @@ void coop_level_reset(void)
         tt_dbg("[COOPEXP] level ends or restarts: level experience player 1 %.0f, player 2 %.0f (level %u)\n", coop_kept_p1_90, coop_kept_p2_90, coop_kept_level); }
     if (getenv("TT_COOP_RESPAWNID")) {   /* bot test: start the level from a checkpoint (the respawn id @SetRespawnId keeps at 0x1BB354) */
         static int done; if (!done) { done = 1; MEM32(0x1BB354u) = (uint32_t)atoi(getenv("TT_COOP_RESPAWNID")); tt_dbg("[CHECKPT] test: respawn id set to %d\n", (int32_t)MEM32(0x1BB354u)); } }
-    coop_p2 = coop_p2_ally = coop_p2_t0 = 0; coop_depth = 0; coop_level_n++;
+    coop_p2 = coop_p2_ally = coop_p2_t0 = 0; coop_depth = 0; coop_level_n++; { extern void coop_oc_reset(void); coop_oc_reset(); }
     coop_world = coop_rec = coop_key = coop_last_char = coop_hero_sel = coop_twin = coop_first_char = 0;
     coop_nwpn = 0; memset(coop_wpn_copy, 0, sizeof coop_wpn_copy); memset(coop_wpn_orig, 0, sizeof coop_wpn_orig); coop_np2w = 0;
     coop_nchars = 0; memset(coop_thr, 0, sizeof coop_thr); { extern int coop_nwobjs; coop_nwobjs = 0; }
