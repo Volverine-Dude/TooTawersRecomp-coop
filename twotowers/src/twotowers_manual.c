@@ -2587,6 +2587,12 @@ void sub_000838E0(void)
     sub_000838E0_gen();
 }
 
+extern void sub_000A3DE0_gen(void); void sub_000A3DE0(void)   /* @AllowDeathCam: logged (research, TT_COOP set) */
+{
+    uint32_t cam = MEM32(0x43B164u); int was = cam >= 0x10000u && cam < 0x84000000u ? MEM8(cam + 0x18B) : -1;
+    sub_000A3DE0_gen();
+    if (getenv("TT_COOP")) { static int n; if (n++ < 40) tt_dbg("[COOPDEATH] @AllowDeathCam: camera +18B %d -> %d (level %u)%s", was, cam >= 0x10000u && cam < 0x84000000u ? MEM8(cam + 0x18B) : -1, MEM32(0x1BB2A4u), "\n"); }
+}
 extern void sub_00069130_gen(void);
 void sub_00069130(void)
 {
@@ -5621,7 +5627,7 @@ static void coop_respawn(int who)
  * a revive, observed), so a hero who goes down while the other is alive does NOT die: he is "down" (his pad reads
  * are zeroed, enemies on him go to the other), then respawns beside the other with full health. Only when both
  * are down does player 1 get the game's own death (die method → death cam → code 5). No death animation yet. */
-static int coop_real_death_pending;
+static int coop_real_death_pending, coop_real_death_done;   /* (done: player 1's death ran once this game over) */
 static void coop_p1_real_death(void)   /* the game's own player death: die method with [0x43B15C] = player 1. The die method starts the
                                          * death cam (slow motion, the Eye, then EndMission 5) only when its hero is [0x43B15C]: player 2's
                                          * fatal hit runs in his context ([0x43B15C] = him), so from there it is only queued, and runs at
@@ -5632,6 +5638,13 @@ static void coop_p1_real_death(void)   /* the game's own player death: die metho
     if (coop_depth || MEM32(0x43B15Cu) != coop_first_char) { coop_real_death_pending = 1; tt_dbg("[COOPDEATH] game over: player 1's death queued (in player 2's context now)\n"); return; }
     coop_real_death_pending = 0;
     MEM32(coop_first_char + 0x2FC) = 0;
+    {   /* (the death cam allowed: Amon Hen's script turns it off (@AllowDeathCam, camera +0x18B) and the camera's player-died
+         * then ends the mission at once -- the game over menu straight away, no slow motion, no Eye; a playtest.
+         * TT_COOP_NODEATHCAMON: as the level left it) */
+        uint32_t cam = MEM32(0x43B164u);
+        if (cam >= 0x10000u && cam < 0x84000000u && !MEM8(cam + 0x18B) && !getenv("TT_COOP_NODEATHCAMON")) { MEM8(cam + 0x18B) = 1; tt_dbg("[COOPDEATH] game over: the level had the death cam off (camera +18B 0): on\n"); }
+    }
+    coop_real_death_done = 1;
     tt_dbg("[COOPDEATH] game over: player 1's death (die method, death cam)\n");
     PUSH32(esp, 0x000838E0u); ecx = coop_first_char; sub_000838E0_gen();
     esp = sp; eax = r0; ecx = r1; edx = r2;
@@ -5639,6 +5652,7 @@ static void coop_p1_real_death(void)   /* the game's own player death: die metho
 /* called from the die method's hook for player 1 (the level script's @ObjectDie): 1 = handled here */
 int coop_p1_die_hook(void)
 {
+    if (coop_gameover && coop_real_death_done && coop_mode() == 3 && !getenv("TT_COOP_DIETWICE")) { static int n; if (n++ < 4) tt_dbg("[COOPDEATH] game over: the level's own death of player 1 after ours, skipped (the death cam started again: 18 s, Amon Hen bot run)" "\n"); return 1; }
     if (coop_mode() != 3 || coop_p2 < 0x10000u || getenv("TT_COOP_NODEATH") || coop_gameover) return 0;
     if (tt_vs_on()) { if (!coop_down[0]) { coop_down[0] = 1; coop_down_t[0] = coop_now(); } if (coop_first_char >= 0x10000u) MEM32(coop_first_char + 0x2FC) = 1; return 1; }   /* (Versus: never the game's death; the round ends) */
     if (coop_down[1]) { coop_gameover = 1; coop_gameover_t = coop_now(); tt_dbg("[COOPDEATH] P1 down while P2 is down: game over (the game's own death)\n"); return 0; }
@@ -12242,7 +12256,7 @@ void coop_level_reset(void)
     coop_rec_addr = 0; coop_p2rec_ok = 0; coop_p2pop_until = 0; coop_p2_wpnarg_p1 = 0;   /* (player 1's weapon name: the level's script data) */ { extern uint32_t coop_lurtz_p2_hits; coop_lurtz_p2_hits = 0; }
     if (coop_p2rec_mem) { uint32_t j; for (j = 0; j < 0x400u; j += 4) MEM32(coop_p2rec_mem + j) = 0; }   /* (his gauge's copy, ours: zeroed again, or the next co-op level refused it as in use and showed no gauge) */
     memset(coop_down, 0, sizeof coop_down); memset(coop_down_t, 0, sizeof coop_down_t); memset(coop_upwatch, 0, sizeof coop_upwatch);
-    coop_gameover = 0; coop_gameover_t = 0; coop_end_seen = 0; coop_real_death_pending = 0;
+    coop_gameover = 0; coop_gameover_t = 0; coop_end_seen = 0; coop_real_death_pending = 0; coop_real_death_done = 0;
     coop_persp_obj = 0; coop_cam_zoom = 1.0f; coop_persp_applied = 1.0f;
     coop_place_frames = 0; coop_start_place = 1; coop_attach_child_seen = 0; coop_new_weapon_now = 0; coop_last_obj = 0; coop_attach_child = 0; coop_new_weapon = 0;
     coop_ring_on[0] = coop_ring_on[1] = 0; coop_hud_show = 0;
