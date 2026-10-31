@@ -12019,15 +12019,17 @@ void sub_0008F410(void)
         MEM32(esp + 0xC) = 0u; { static int n; if (n++ < 40) tt_dbg("[COOPPOTION] pickup %08X: kind %u -> 0\n", ecx, k); } }
     sub_0008F410_gen();
 }
-/* co-op Expert: half the health a fallen enemy drops, every second one left out, the enemies being more (a playtest). 0x8CAD0's one call (cdecl
- * place, turn, kind) from a death; kinds 0, 1, 4, 5 health. TT_COOP_KEEPDROPS: as the game */
+/* co-op Expert: fewer health drops from the fallen, the enemies being more (a playtest): one in 2 kept, one in 4 on Balin's Tomb (its enemies
+ * never end) and Helm's Deep's three levels (the multiplier fills them). 0x8CAD0's one call (cdecl place, turn, kind) from a death; kinds
+ * 0, 1, 4, 5 health. TT_COOP_KEEPDROPS: as the game */
 extern void sub_0008F2E0_gen(void);
 void sub_0008F2E0(void)
 {
-    uint32_t k = MEM32(esp + 0xC); static unsigned n;
+    uint32_t k = MEM32(esp + 0xC), lv = MEM32(0x1BB2A4u); static unsigned n;
     if ((k == 0u || k == 1u || k == 4u || k == 5u) && coop_mode() == 3 && !tt_vs_on() && tt_coop_setting(0) == 2 && !getenv("TT_COOP_KEEPDROPS")) {
-        n++; { static int nl; if (nl++ < 40) tt_dbg("[COOPDROP] health drop %u (kind %u): %s\n", n, k, n & 1u ? "kept" : "left out"); }
-        if (!(n & 1u)) { eax = 0; esp += 4; return; } }
+        unsigned every = lv == 3u || lv == 9u || lv == 10u || lv == 11u ? 4u : 2u, keep = n++ % every == 0u;
+        { static int nl; if (nl++ < 40) tt_dbg("[COOPDROP] level %u health drop %u (kind %u, one in %u): %s\n", lv, n, k, every, keep ? "kept" : "left out"); }
+        if (!keep) { eax = 0; esp += 4; return; } }
     sub_0008F2E0_gen();
 }
 extern void sub_000D23A0_gen(void); void sub_000D23A0(void) { int s = coop_diff_swap(); sub_000D23A0_gen(); if (s >= 0) MEM8(0x4AB69Cu) = (uint8_t)s; }
