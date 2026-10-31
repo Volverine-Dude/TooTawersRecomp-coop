@@ -4803,10 +4803,10 @@ static void coop_place(void)
          * leash: a hero past those sectors was not drawn, and a hero not drawn is not updated -- no animation, so no movement, and teleports
          * left his model behind: unseen and frozen for the rest of the level (the Plains of Rohan, two playtests; "if a player go too far in
          * the level, the other player get undrawn"; a bot run, player 2 stranded far off: +0x110 25F70, weapons 15 units from him; all drawn:
-         * he walked back). A level without portals hides sectors by script: left alone. Not Westfold (7) as in Versus (a playtest: the
-         * ground and player 1 lost). TT_COOP_KEEPSECTORS: the level's own; TT_COOP_ALLSECTORS: Westfold too */
+         * he walked back). A level without portals hides sectors by script: left alone. Westfold too, at the owner's word (in Versus, drawn
+         * from random starts, a playtest lost the ground and player 1 there; a co-op bot run at its start did not). TT_COOP_KEEPSECTORS: the level's own */
         uint32_t wd = MEM32(0x3C35A0u);
-        if (coop_mode() == 3 && a >= 0x10000u && !tt_vs_on() && !getenv("TT_COOP_KEEPSECTORS") && wd >= 0x10000u && wd < 0x84000000u && MEM32(wd + 0x14) && (MEM32(0x1BB2A4u) != 7u || getenv("TT_COOP_ALLSECTORS"))) coop_all_sectors();
+        if (coop_mode() == 3 && a >= 0x10000u && !tt_vs_on() && !getenv("TT_COOP_KEEPSECTORS") && wd >= 0x10000u && wd < 0x84000000u && MEM32(wd + 0x14)) coop_all_sectors();
     }
     coop_pm_probe(p1); coop_pm_log(p1); coop_trail_frame(p1); coop_steps_frame(p1); { extern void coop_own_machines_x(void); coop_own_machines_x(); } { extern void coop_pdmg_frame_x(void); coop_pdmg_frame_x(); }
     if (getenv("TT_COOP_AIMSTATE") && p1 >= 0x10000u && a >= 0x10000u) {   /* (research) each hero's state, lock and pad record, 4 times a second */
