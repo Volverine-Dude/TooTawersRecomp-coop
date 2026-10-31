@@ -5089,6 +5089,10 @@ static void coop_place(void)
          * 600 units under Weathertop after a cutscene, a playtest; found with TT_COOP_PLACEPROBE. TT_COOP_NOFALLPLACE: as before) */
         uint32_t b = MEM32(a + 0x494);
         if (!getenv("TT_COOP_NOFALLPLACE")) for (k = 0; k < 3; k++) { MEM32(a + 0x628 + 4 * k) = MEM32(a + 0xF0 + 4 * k); if (b >= 0x80000000u && b < 0x84000000u) MEM32(b + 0xE8 + 4 * k) = MEM32(a + 0xF0 + 4 * k); }
+        /* and the game's own SetPosition (vtable +0x28, 0x865D0, as @TeleportPlayerTo), which takes his model along: with the fields alone it
+         * stayed at the old spot (the Plains of Rohan, a playtest: his weapons 24 units from him after a teleport, then unseen and unmoving
+         * for the rest of the level). TT_COOP_NOPLACECALL: fields only */
+        if (!getenv("TT_COOP_NOPLACECALL") && MEM32(a) == 0x1741C0u) { extern uint32_t tt_gcall(uint32_t va, uint32_t thisptr, int n, const uint32_t *args); uint32_t xyz[3]; for (k = 0; k < 3; k++) xyz[k] = MEM32(a + 0xF0 + 4 * k); tt_gcall(MEM32(MEM32(a) + 0x28u), a, 3, xyz); }
         if (getenv("TT_COOP_250PLACE")) for (k = 0; k < 3; k++) MEM32(a + 0x250 + 4 * k) = MEM32(a + 0xF0 + 4 * k);
         if (getenv("TT_COOP_INSTPLACE")) { uint32_t in = MEM32(a + 0x3D0); if (in >= 0x80000000u && in < 0x84000000u) for (k = 0; k < 3; k++) { MEM32(in + 0x40 + 4 * k) = MEM32(a + 0xF0 + 4 * k); MEM32(in + 0x214 + 4 * k) = MEM32(a + 0xF0 + 4 * k); } }   /* (research: the model instance's copies) */   /* (research, both off: +0x250 and the instance's copies held his old place when the Plains of Rohan's
          * catch-ups read his old place back from it every frame, a bot run with TT_COOP_PLACEPROBE; a playtest lost sight of him after one) */
