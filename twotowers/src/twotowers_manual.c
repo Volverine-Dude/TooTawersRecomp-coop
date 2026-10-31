@@ -4776,10 +4776,38 @@ static void coop_place_target(uint32_t p1, float *x, float *y)
     } else tt_dbg("[COOP2] place: no pathmap for player 1 (+2EC %u): on his own spot\n", p1 >= 0x10000u ? MEM32(p1 + 0x2ECu) : 0);
 }
 static int coop_start_place = 1;   /* play (re)starting: player 2 to be put beside player 1 (coop_place) */
+static void coop_all_sectors(void)   /* every sector of the level drawn, the second way below (Versus, co-op) */
+{
+    static unsigned lv = ~0u; static uint32_t buf; uint32_t w = MEM32(0x3C35A0u), n, i;
+    if (w < 0x10000u || w >= 0x84000000u) return;
+    n = MEM32(w + 0x10);
+    if (n > 0 && n <= 4096u) {
+        extern uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment);
+        if (!buf) { buf = xbox_ContiguousAlloc(4096u, 16u); if (buf == 0x80000000u) buf = xbox_ContiguousAlloc(4096u, 16u); }   /* (not physical 0) */
+        if (buf) {
+            if (MEM32(0x3C35CCu) != buf || lv != coop_level_n) {
+                uint32_t old = MEM32(0x3C35CCu); unsigned hid = 0;
+                for (i = 0; i < n; i++) { if (old >= 0x10000u && old < 0x84000000u && !MEM8(old + i)) hid++; MEM8(buf + i) = 1; }
+                if (lv != coop_level_n) tt_dbg("[COOPSEC] sectors: %u in the level (portals %08X, flag %u, array %08X with %u hidden): all drawn\n", n, MEM32(w + 0x14), MEM8(0x3C35C8u), old, hid);
+                lv = coop_level_n;
+            }
+            MEM32(0x3C35CCu) = buf; MEM8(0x3C35C8u) = 1;
+        }
+    }
+}
 static void coop_place(void)
 {
     uint32_t p1 = MEM32(0x43B15Cu), a = coop_p2, k;
     static int after, place_have, place_nopm, place_off_ok; static float place_x, place_y, place_ox, place_oy;
+    {   /* co-op: every sector drawn on a level with portals (its own way draws what the camera's sector sees). There is one camera and no
+         * leash: a hero past those sectors was not drawn, and a hero not drawn is not updated -- no animation, so no movement, and teleports
+         * left his model behind: unseen and frozen for the rest of the level (the Plains of Rohan, two playtests; "if a player go too far in
+         * the level, the other player get undrawn"; a bot run, player 2 stranded far off: +0x110 25F70, weapons 15 units from him; all drawn:
+         * he walked back). A level without portals hides sectors by script: left alone. Not Westfold (7) as in Versus (a playtest: the
+         * ground and player 1 lost). TT_COOP_KEEPSECTORS: the level's own; TT_COOP_ALLSECTORS: Westfold too */
+        uint32_t wd = MEM32(0x3C35A0u);
+        if (coop_mode() == 3 && a >= 0x10000u && !tt_vs_on() && !getenv("TT_COOP_KEEPSECTORS") && wd >= 0x10000u && wd < 0x84000000u && MEM32(wd + 0x14) && (MEM32(0x1BB2A4u) != 7u || getenv("TT_COOP_ALLSECTORS"))) coop_all_sectors();
+    }
     coop_pm_probe(p1); coop_pm_log(p1); coop_trail_frame(p1); coop_steps_frame(p1); { extern void coop_own_machines_x(void); coop_own_machines_x(); } { extern void coop_pdmg_frame_x(void); coop_pdmg_frame_x(); }
     if (getenv("TT_COOP_AIMSTATE") && p1 >= 0x10000u && a >= 0x10000u) {   /* (research) each hero's state, lock and pad record, 4 times a second */
         static uint32_t lt; if (coop_now() - lt >= 250u) { int w, j; lt = coop_now();
@@ -7483,23 +7511,9 @@ static void vs_frame(void)
          * [0x3C35CC] shows (set all at its load, 0x44952; @ShowSector, 0x43F70, one). Past the start's sectors Amon Hen's
          * ground ended in a brown void (a playtest: "make the entire map explorable"). Here the second way, all shown.
          * TT_VS_KEEPSECTORS: the level's own */
-        static unsigned lv = ~0u; static uint32_t buf; uint32_t w = MEM32(0x3C35A0u), n, i;
-        if (!getenv("TT_VS_KEEPSECTORS") && (MEM32(0x1BB2A4u) != 7u || getenv("TT_VS_ALLSECTORS")) && w >= 0x10000u && w < 0x84000000u) {   /* (every arena but Westfold (7) -- with the random starts, a start past the level's first sectors showed nothing but
+        if (!getenv("TT_VS_KEEPSECTORS") && (MEM32(0x1BB2A4u) != 7u || getenv("TT_VS_ALLSECTORS"))) {   /* (every arena but Westfold (7) -- with the random starts, a start past the level's first sectors showed nothing but
  * the sky (a playtest: Fangorn, the Gates of Moria; the Plains of Rohan, tested); on Westfold all of them drawn at once lost the ground and player 1, a playtest) */
-            n = MEM32(w + 0x10);
-            if (n > 0 && n <= 4096u) {
-                extern uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment);
-                if (!buf) { buf = xbox_ContiguousAlloc(4096u, 16u); if (buf == 0x80000000u) buf = xbox_ContiguousAlloc(4096u, 16u); }   /* (not physical 0) */
-                if (buf) {
-                    if (MEM32(0x3C35CCu) != buf || lv != coop_level_n) {
-                        uint32_t old = MEM32(0x3C35CCu); unsigned hid = 0;
-                        for (i = 0; i < n; i++) { if (old >= 0x10000u && old < 0x84000000u && !MEM8(old + i)) hid++; MEM8(buf + i) = 1; }
-                        if (lv != coop_level_n) tt_dbg("[VS] sectors: %u in the level (portals %08X, flag %u, array %08X with %u hidden): all drawn\n", n, MEM32(w + 0x14), MEM8(0x3C35C8u), old, hid);
-                        lv = coop_level_n;
-                    }
-                    MEM32(0x3C35CCu) = buf; MEM8(0x3C35C8u) = 1;
-                }
-            }
+            coop_all_sectors();
         }
     }
     if (getenv("TT_VS_POSLOG")) { static uint32_t tp; if (now - tp > 2000u) { tp = now; tt_dbg("[POS] P1 %.1f %.1f %.1f pm %d head %.2f | P2 %.1f %.1f %.1f pm %d\n", MEMF(coop_first_char + 0xF0), MEMF(coop_first_char + 0xF4), MEMF(coop_first_char + 0xF8), (int)MEM32(coop_first_char + 0x2EC), MEMF(coop_first_char + 0x100), MEMF(coop_p2 + 0xF0), MEMF(coop_p2 + 0xF4), MEMF(coop_p2 + 0xF8), (int)MEM32(coop_p2 + 0x2EC)); } }   /* (test) */
@@ -8976,6 +8990,10 @@ void sub_0009C380(void)
         if (lv != coop_level_n) { lv = coop_level_n; done = 0; }
         if (v && !done && coop_p2_t0 && coop_p2 >= 0x10000u && coop_first_char >= 0x10000u && !coop_depth) { const char *c1 = strchr(v, ','), *c2 = c1 ? strchr(c1 + 1, ',') : NULL;
             if (c2 && coop_now() - coop_p2_t0 >= (uint32_t)atoi(c2 + 1)) { done = 1; MEMF(coop_p2 + 0xF0) = (float)atof(v); MEMF(coop_p2 + 0xF4) = (float)atof(c1 + 1); MEMF(coop_p2 + 0xF8) = MEMF(coop_first_char + 0xF8);
+                if (getenv("TT_COOP_P2GOTOZ")) MEMF(coop_p2 + 0xF8) = (float)atof(getenv("TT_COOP_P2GOTOZ"));
+                { uint32_t q, bd = MEM32(coop_p2 + 0x494), xyz[3]; extern uint32_t tt_gcall(uint32_t va, uint32_t thisptr, int n, const uint32_t *args);   /* (all his places, as coop_place: the game took the next frame's from the others) */
+                  for (q = 0; q < 3; q++) { xyz[q] = MEM32(coop_p2 + 0xF0 + 4 * q); MEM32(coop_p2 + 0x130 + 4 * q) = MEM32(coop_p2 + 0x140 + 4 * q) = MEM32(coop_p2 + 0x628 + 4 * q) = xyz[q]; if (bd >= 0x80000000u && bd < 0x84000000u) MEM32(bd + 0xE8 + 4 * q) = xyz[q]; }
+                  tt_gcall(MEM32(MEM32(coop_p2) + 0x28u), coop_p2, 3, xyz); }
                 MEM32(coop_p2 + 0x90) = MEM32(coop_p2 + 0xF0); MEM32(coop_p2 + 0x94) = MEM32(coop_p2 + 0xF4); MEM32(coop_p2 + 0x98) = MEM32(coop_p2 + 0xF8);
                 tt_dbg("[COOPGOTO] test: player 2 put at %.1f %.1f %.1f\n", MEMF(coop_p2 + 0xF0), MEMF(coop_p2 + 0xF4), MEMF(coop_p2 + 0xF8)); } }
     }
