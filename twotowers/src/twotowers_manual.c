@@ -3483,7 +3483,8 @@ static void coop_bot_view(BotView *v)
     float sx, sy, far2; int i, n = 1;
     v->qx = MEMF(v->p1 + 0xF0); v->qy = MEMF(v->p1 + 0xF4); v->bx = MEMF(v->p2 + 0xF0); v->by = MEMF(v->p2 + 0xF4);
     v->d1 = sqrtf((v->qx - v->bx) * (v->qx - v->bx) + (v->qy - v->by) * (v->qy - v->by));
-    if (v->d1 > 22.0f && coop_place_frames <= 0) {
+    if (v->d1 > 22.0f && coop_place_frames <= 0 && !getenv("TT_COOP_BOTNOPUT") && (getenv("TT_COOP_OLDCATCHUP") || (coop_pathmap(v->p1) && !tt_in_scene()))) {   /* (not while player 1 is off the pathmaps or in a cutscene: a bot run put him
+        * beside a player 1 falling through the Plains of Rohan, as the catch-up did at Weathertop, coop_place) */
         if (!far_t) far_t = v->now | 1;
         else if (v->now - far_t > 3000u) { far_t = 0; coop_place_frames = 3; s_bot_following = 0; tt_dbg("[P2BOT] %.1f behind for 3 s: put beside player 1\n", v->d1); }
     } else far_t = 0;
@@ -4874,6 +4875,43 @@ static void coop_place(void)
          * TT_COOP_NOJUMPFOLLOW: off. */
         extern int tt_in_scene(void); extern int xbox_MoviePlaying(void);
         static uint32_t prev_p1; static float lx, ly;
+        if (a >= 0x10000u && p1 >= 0x10000u && !getenv("TT_COOP_NOUNSEENLOG")) {   /* player 2 not drawn (+0x110 bit 0x8000 off: no frame drew him) 2 s outside a cutscene, while player 1
+            * is: logged with where he is and his flags, once each time (the Plains of Rohan, a playtest: unseen and frozen from 216 s, his marker and targeting
+            * still there; +0x49C 0x100 went off at the same moment; the cause unknown) */
+            static uint32_t un_t; static int said; extern int coop_hero_down(int);
+            if (tt_in_scene() || coop_hero_down(1) || (MEM32(a + 0x110) & 0x8000u) || !(MEM32(p1 + 0x110) & 0x8000u)) { un_t = 0; said = 0; }
+            else if (!un_t) un_t = coop_now() | 1;
+            else if (coop_now() - un_t > 2000u && !said) { uint32_t wd = MEM32(0x3C35A0u), n = wd >= 0x10000u && wd < 0x84000000u ? MEM32(wd + 0x10) : 0, i; char b[200]; int k = 0;
+                said = 1;
+                for (i = 0; i < n && i < 64 && k < 180; i++) { uint32_t sc = MEM32(wd + 0x100 + 4 * i) - 0x20; float x = MEMF(a + 0xF0), y = MEMF(a + 0xF4), z = MEMF(a + 0xF8);
+                    if (sc >= 0x80000000u && sc < 0x83F00000u && x >= MEMF(sc + 0x30) && x <= MEMF(sc + 0x40) && y >= MEMF(sc + 0x34) && y <= MEMF(sc + 0x44) && z >= MEMF(sc + 0x38) - 4 && z <= MEMF(sc + 0x48) + 4) k += snprintf(b + k, sizeof b - k, " '%.16s'", (const char *)XBOX_PTR(sc + 0x20)); }
+                tt_dbg("[COOPUNSEEN] player 2 not drawn for 2 s (player 1 is): at %.1f %.1f %.1f (player 1 %.1f %.1f %.1f), pathmap %d (player 1 %d), +110 %08X +49C %08X state %u, sectors:%s\n",
+                       MEMF(a + 0xF0), MEMF(a + 0xF4), MEMF(a + 0xF8), MEMF(p1 + 0xF0), MEMF(p1 + 0xF4), MEMF(p1 + 0xF8), (int)MEM32(a + 0x2EC), (int)MEM32(p1 + 0x2EC), MEM32(a + 0x110), MEM32(a + 0x49C), MEM32(a + 0x408), k ? b : " none"); }
+        }
+        if (getenv("TT_COOP_P2WORDS") && a >= 0x10000u) {   /* (research) player 2's small-number words that changed (his and his model instance's), each second */
+            static uint32_t tl, prev[0x300]; static int have; uint32_t o, in = MEM32(a + 0x3D0); char b2[1600]; int k = 0;
+            if (coop_now() - tl > 1000u) { tl = coop_now();
+                for (o = 0; o < 0x800; o += 4) { uint32_t v = MEM32(a + o); if (have && v != prev[o / 4] && v < 256u && prev[o / 4] < 256u && k < 1500) k += snprintf(b2 + k, sizeof b2 - k, " +%X:%u->%u", o, prev[o / 4], v); prev[o / 4] = v; }
+                if (in >= 0x80000000u && in < 0x83F00000u) for (o = 0; o < 0x400; o += 4) { uint32_t v = MEM32(in + o); if (have && v != prev[0x200 + o / 4] && v < 256u && prev[0x200 + o / 4] < 256u && k < 1500) k += snprintf(b2 + k, sizeof b2 - k, " i+%X:%u->%u", o, prev[0x200 + o / 4], v); prev[0x200 + o / 4] = v; }
+                have = 1; if (k) tt_dbg("[P2WORDS] P2 at %.1f %.1f %.1f:%s\n", MEMF(a + 0xF0), MEMF(a + 0xF4), MEMF(a + 0xF8), b2); } }
+        if (getenv("TT_COOP_SECLOG") && p1 >= 0x10000u && a >= 0x10000u) {   /* (research) the words of each hero naming a sector of the level, and the sector his place is in, every 3 s */
+            static uint32_t tl; uint32_t wd = MEM32(0x3C35A0u), n = wd >= 0x10000u && wd < 0x84000000u ? MEM32(wd + 0x10) : 0, i, o, h; int ww;
+            if (coop_now() - tl > 3000u && n && n <= 64) { tl = coop_now();
+                for (ww = 0; ww < 2; ww++) { char b[400]; int k = 0; h = ww ? a : p1;
+                    for (o = 0; o < 0x800 && k < 360; o += 4) { uint32_t v = MEM32(h + o), q2; for (i = 0; i < n; i++) { uint32_t sc = MEM32(wd + 0x100 + 4 * i); if (v && (v == sc || v == sc - 0x20)) k += snprintf(b + k, sizeof b - k, " +%X=%u%s", o, i, v == sc ? "" : "(-20)"); }
+                        if (v >= 0x80000000u && v < 0x83F00000u && v != h) for (q2 = 0; q2 < 0x400u && k < 360; q2 += 4) { uint32_t v2 = MEM32(v + q2); for (i = 0; i < n; i++) { uint32_t sc = MEM32(wd + 0x100 + 4 * i); if (v2 && (v2 == sc || v2 == sc - 0x20)) k += snprintf(b + k, sizeof b - k, " +%X>+%X=%u%s", o, q2, i, v2 == sc ? "" : "(-20)"); } } }
+                    for (i = 0; i < n && k < 380; i++) { uint32_t sc = MEM32(wd + 0x100 + 4 * i) - 0x20; float x = MEMF(h + 0xF0), y = MEMF(h + 0xF4), z = MEMF(h + 0xF8);
+                        if (x >= MEMF(sc + 0x30) && x <= MEMF(sc + 0x40) && y >= MEMF(sc + 0x34) && y <= MEMF(sc + 0x44) && z >= MEMF(sc + 0x38) - 4 && z <= MEMF(sc + 0x48) + 4) k += snprintf(b + k, sizeof b - k, " in %u '%.16s'", i, (const char *)XBOX_PTR(sc + 0x20)); }
+                    tt_dbg("[SECLOG] P%d at %.1f %.1f %.1f:%s\n", ww + 1, MEMF(h + 0xF0), MEMF(h + 0xF4), MEMF(h + 0xF8), b); }
+                for (i = 0; i < n; i++) {   /* (which sector holds each hero: its words, and one pointer deep) */
+                    uint32_t sc = MEM32(wd + 0x100 + 4 * i) - 0x20, q, q2, w[6]; char b[300]; int k = 0, j;
+                    w[0] = p1; w[1] = a; w[2] = MEM32(p1 + 0x3D0); w[3] = MEM32(a + 0x3D0); w[4] = MEM32(p1 + 0x418); w[5] = MEM32(a + 0x418);
+                    if (sc < 0x80000000u || sc >= 0x83F00000u) continue;
+                    for (q = 0; q < 0x200u && k < 260; q += 4) { uint32_t v = MEM32(sc + q);
+                        for (j = 0; j < 6; j++) if (v == w[j] && v) k += snprintf(b + k, sizeof b - k, " +%X=%s", q, j == 0 ? "P1" : j == 1 ? "P2" : j == 2 ? "P1inst" : j == 3 ? "P2inst" : j == 4 ? "P1+418" : "P2+418");
+                        if (v >= 0x80000000u && v < 0x83F00000u) for (q2 = 0; q2 < 0x100u && k < 260; q2 += 4) { uint32_t v2 = MEM32(v + q2);
+                            for (j = 0; j < 6; j++) if (v2 == w[j] && v2) k += snprintf(b + k, sizeof b - k, " +%X>+%X=%s", q, q2, j == 0 ? "P1" : j == 1 ? "P2" : j == 2 ? "P1inst" : j == 3 ? "P2inst" : j == 4 ? "P1+418" : "P2+418"); } }
+                    if (k) tt_dbg("[SECLOG]   sector %u '%.16s':%s\n", i, (const char *)XBOX_PTR(sc + 0x20), b); } } }
         if (getenv("TT_COOP_P1TRACK") && p1 >= 0x10000u && coop_p2_t0 && !tt_in_scene()) {   /* (bot test) player 1 walked along a route taken from a playtest log: "ms x y z" points, ms from player 2's take-over */
             static float tr[512][4]; static int tn = -1, ti; uint32_t tt = coop_now() - coop_p2_t0;
             if (tn < 0) { const char *c = getenv("TT_COOP_P1TRACK"); char *e; int q; tn = 0;   /* (the numbers in the variable, 4 a point) */
@@ -5051,6 +5089,9 @@ static void coop_place(void)
          * 600 units under Weathertop after a cutscene, a playtest; found with TT_COOP_PLACEPROBE. TT_COOP_NOFALLPLACE: as before) */
         uint32_t b = MEM32(a + 0x494);
         if (!getenv("TT_COOP_NOFALLPLACE")) for (k = 0; k < 3; k++) { MEM32(a + 0x628 + 4 * k) = MEM32(a + 0xF0 + 4 * k); if (b >= 0x80000000u && b < 0x84000000u) MEM32(b + 0xE8 + 4 * k) = MEM32(a + 0xF0 + 4 * k); }
+        if (getenv("TT_COOP_250PLACE")) for (k = 0; k < 3; k++) MEM32(a + 0x250 + 4 * k) = MEM32(a + 0xF0 + 4 * k);
+        if (getenv("TT_COOP_INSTPLACE")) { uint32_t in = MEM32(a + 0x3D0); if (in >= 0x80000000u && in < 0x84000000u) for (k = 0; k < 3; k++) { MEM32(in + 0x40 + 4 * k) = MEM32(a + 0xF0 + 4 * k); MEM32(in + 0x214 + 4 * k) = MEM32(a + 0xF0 + 4 * k); } }   /* (research: the model instance's copies) */   /* (research, both off: +0x250 and the instance's copies held his old place when the Plains of Rohan's
+         * catch-ups read his old place back from it every frame, a bot run with TT_COOP_PLACEPROBE; a playtest lost sight of him after one) */
     }
 }static void coop_gate_log(int who)
 {
