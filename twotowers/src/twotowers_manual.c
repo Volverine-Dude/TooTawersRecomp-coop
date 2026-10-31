@@ -5330,7 +5330,17 @@ void sub_00099D40(void)
     uint32_t en = MEM32(esp + 4), ra = MEM32(esp), la = en >= 0x10000u ? MEM32(en + 0x4BC) : 0; int sw = 0, mine;
     float b1 = coop_rec_addr ? MEMF(coop_rec_addr + 0x90) : 0, a1;
     {   int lw = en >= 0x10000u && !getenv("TT_COOP_KILLBYLAST") ? coop_lastdmg_who(en) : -1;   /* (whose damage brought it to 0; not known: its last attacker) */
-        mine = coop_mode() == 3 && coop_p2 >= 0x10000u && ra == 0x00085711u && (lw >= 0 ? lw == 2 : la == coop_p2) && coop_rec_addr && !getenv("TT_COOP_OLDKILL") && !getenv("TT_COOP_NOP2EXP");
+        /* a blow's damage can wait on the enemy (+0x3F0, its attacker +0x3F4, from 0x849F0) until its state takes it: the death and this
+         * award then come before the threat watch notes the drop, and the last damage noted was an older one -- player 1's killing blow
+         * went to player 2 for an arrow up to 5 s before, at his meter's 0 (a playtest: "when p1 make the killing blow, p2 earned the
+         * kill"; the log: last damage player 2's, last attacker player 1, 4 kills paying 0). Not noted this frame: the waiting damage's
+         * attacker, else the last attacker. TT_COOP_NOPENDKILL: as before */
+        if (lw >= 0 && en >= 0x10000u && coop_mode() == 3 && !coop_lastdmg_now(en) && !getenv("TT_COOP_NOPENDKILL")) {
+            uint32_t a = MEM32(en + 0x3F4); int was = lw;
+            if (a != coop_first_char && a != coop_p2) a = la;
+            if (a == coop_first_char || a == coop_p2) lw = a == coop_p2 ? 2 : 1;
+            if (lw != was) { static int n; if (n++ < 40) tt_dbg("[COOPEXP] kill of %08X '%s': the damage taken was waiting, player %d's (the last noted player %d's)\n", en, coop_nm(en), lw, was); } }
+        mine =coop_mode() == 3 && coop_p2 >= 0x10000u && ra == 0x00085711u && (lw >= 0 ? lw == 2 : la == coop_p2) && coop_rec_addr && !getenv("TT_COOP_OLDKILL") && !getenv("TT_COOP_NOP2EXP");
         if (lw >= 0 && (lw == 2) != (la == coop_p2) && coop_mode() == 3) { static int n; if (n++ < 20) tt_dbg("[COOPEXP] kill of %08X '%s': the last damage player %d's, its last attacker %s -- the award to player %d\n", en, coop_nm(en), lw, la == coop_p2 ? "player 2" : la == coop_first_char ? "player 1" : "another", mine ? 2 : 1); } }
     if (mine) { sw = tt_coop_enter_ctx(); b1 = MEMF(coop_rec_addr + 0x90); coop_p2pop_until = coop_now() + 2600; if (getenv("TT_COOP_KILLLOG")) tt_dbg("[KILLLOG] player 2's kill: his rating meter +4 %.2f (+5C %.2f)\n", MEMF(coop_rec_addr + 4), MEMF(coop_rec_addr + 0x5C)); }
     sub_00099D40_gen();
