@@ -12019,6 +12019,17 @@ void sub_0008F410(void)
         MEM32(esp + 0xC) = 0u; { static int n; if (n++ < 40) tt_dbg("[COOPPOTION] pickup %08X: kind %u -> 0\n", ecx, k); } }
     sub_0008F410_gen();
 }
+/* co-op Expert: half the health a fallen enemy drops, every second one left out, the enemies being more (a playtest). 0x8CAD0's one call (cdecl
+ * place, turn, kind) from a death; kinds 0, 1, 4, 5 health. TT_COOP_KEEPDROPS: as the game */
+extern void sub_0008F2E0_gen(void);
+void sub_0008F2E0(void)
+{
+    uint32_t k = MEM32(esp + 0xC); static unsigned n;
+    if ((k == 0u || k == 1u || k == 4u || k == 5u) && coop_mode() == 3 && !tt_vs_on() && tt_coop_setting(0) == 2 && !getenv("TT_COOP_KEEPDROPS")) {
+        n++; { static int nl; if (nl++ < 40) tt_dbg("[COOPDROP] health drop %u (kind %u): %s\n", n, k, n & 1u ? "kept" : "left out"); }
+        if (!(n & 1u)) { eax = 0; esp += 4; return; } }
+    sub_0008F2E0_gen();
+}
 extern void sub_000D23A0_gen(void); void sub_000D23A0(void) { int s = coop_diff_swap(); sub_000D23A0_gen(); if (s >= 0) MEM8(0x4AB69Cu) = (uint8_t)s; }
 extern void sub_000D23B0_gen(void); void sub_000D23B0(void) { int s = coop_diff_swap(); sub_000D23B0_gen(); if (s >= 0) MEM8(0x4AB69Cu) = (uint8_t)s; }
 static int imp_rule(int32_t h0, int32_t mx, int32_t dmg) { int32_t h = h0 - dmg; if (dmg <= 0) return h0; if (h0 > mx / 2 + 1) return h < mx / 2 ? (h < 1 ? 1 : h) : mx / 2; return 0; }
