@@ -4776,6 +4776,7 @@ static void coop_place_target(uint32_t p1, float *x, float *y)
     } else tt_dbg("[COOP2] place: no pathmap for player 1 (+2EC %u): on his own spot\n", p1 >= 0x10000u ? MEM32(p1 + 0x2ECu) : 0);
 }
 static int coop_start_place = 1;   /* play (re)starting: player 2 to be put beside player 1 (coop_place) */
+static uint32_t coop_goto_t;   /* (bot test) TT_COOP_P2GOTO's time, the catch-up held TT_COOP_P2GOTOHOLD ms after it */
 static void coop_all_sectors(void)   /* every sector of the level drawn, the second way below (Versus, co-op) */
 {
     static unsigned lv = ~0u; static uint32_t buf; uint32_t w = MEM32(0x3C35A0u), n, i;
@@ -4799,14 +4800,27 @@ static void coop_place(void)
 {
     uint32_t p1 = MEM32(0x43B15Cu), a = coop_p2, k;
     static int after, place_have, place_nopm, place_off_ok; static float place_x, place_y, place_ox, place_oy;
-    {   /* co-op: every sector drawn on a level with portals (its own way draws what the camera's sector sees). There is one camera and no
-         * leash: a hero past those sectors was not drawn, and a hero not drawn is not updated -- no animation, so no movement, and teleports
-         * left his model behind: unseen and frozen for the rest of the level (the Plains of Rohan, two playtests; "if a player go too far in
-         * the level, the other player get undrawn"; a bot run, player 2 stranded far off: +0x110 25F70, weapons 15 units from him; all drawn:
-         * he walked back). A level without portals hides sectors by script: left alone. Westfold too, at the owner's word (in Versus, drawn
-         * from random starts, a playtest lost the ground and player 1 there; a co-op bot run at its start did not). TT_COOP_KEEPSECTORS: the level's own */
+    {   /* (test only, TT_COOP_ALLSECTORS) every sector drawn on a level with portals. It keeps a hero past the camera's sectors drawn and
+         * updated, but a drawn sector is a live one: on the Plains of Rohan, a playtest, the door Gandalf breaks stayed standing (no way
+         * through it seen) and events ran early. Not for the campaign */
         uint32_t wd = MEM32(0x3C35A0u);
-        if (coop_mode() == 3 && a >= 0x10000u && !tt_vs_on() && !getenv("TT_COOP_KEEPSECTORS") && wd >= 0x10000u && wd < 0x84000000u && MEM32(wd + 0x14)) coop_all_sectors();
+        if (coop_mode() == 3 && a >= 0x10000u && !tt_vs_on() && getenv("TT_COOP_ALLSECTORS") && wd >= 0x10000u && wd < 0x84000000u && MEM32(wd + 0x14)) coop_all_sectors();
+    }
+    if (a >= 0x10000u && p1 >= 0x10000u && coop_mode() == 3 && !tt_vs_on() && !getenv("TT_COOP_NOWAKE")) {
+        /* a hero who left the sectors the camera sees stops being updated (+0x110 bits 0x2000 and 0x8000 off, active), and coming back into
+         * them does not start him again: unseen and frozen beside the other, for the rest of the level (two playtests; bot runs). With
+         * every sector drawn he is updated, but a drawn sector is a live one (coop_all_sectors, TT_COOP_ALLSECTORS), so only for a
+         * moment: once he is within 30 units of the other, until he wakes, at most 1.5 s, not again for 3 s */
+        extern int tt_in_scene(void); extern int coop_hero_down(int);
+        static uint32_t until, next, sv_arr; static uint8_t sv_flag; uint32_t f1 = MEM32(p1 + 0x110), f2 = MEM32(a + 0x110), now = coop_now();
+        int fz1 = (f1 & 0x1000u) && !(f1 & 0xA000u), fz2 = (f2 & 0x1000u) && !(f2 & 0xA000u); float dx = MEMF(a + 0xF0) - MEMF(p1 + 0xF0), dy = MEMF(a + 0xF4) - MEMF(p1 + 0xF4);
+        if (until) {
+            if (now < until && (fz1 || fz2) && !tt_in_scene()) coop_all_sectors();
+            else { MEM32(0x3C35CCu) = sv_arr; MEM8(0x3C35C8u) = sv_flag; tt_dbg("[COOPWAKE] sectors back after %u ms: player %d +110 %08X, player 1 %08X\n", 1500u - (until - now), 2, f2, f1); until = 0; next = now + 3000u; }
+        } else if ((fz1 != fz2) && now >= next && dx * dx + dy * dy < 900.0f && !tt_in_scene() && !coop_hero_down(0) && !coop_hero_down(1)) {
+            sv_arr = MEM32(0x3C35CCu); sv_flag = MEM8(0x3C35C8u); until = now + 1500u; coop_all_sectors();
+            tt_dbg("[COOPWAKE] player %d frozen %.1f from the other: every sector for a moment (+110 %08X, array %08X flag %u)\n", fz2 ? 2 : 1, sqrtf(dx * dx + dy * dy), fz2 ? f2 : f1, sv_arr, sv_flag);
+        }
     }
     coop_pm_probe(p1); coop_pm_log(p1); coop_trail_frame(p1); coop_steps_frame(p1); { extern void coop_own_machines_x(void); coop_own_machines_x(); } { extern void coop_pdmg_frame_x(void); coop_pdmg_frame_x(); }
     if (getenv("TT_COOP_AIMSTATE") && p1 >= 0x10000u && a >= 0x10000u) {   /* (research) each hero's state, lock and pad record, 4 times a second */
@@ -5084,6 +5098,7 @@ static void coop_place(void)
             if (getenv("TT_COOP_TESTVOID")) { static int put; if (!put && coop_p2_t0 && coop_now() - coop_p2_t0 > (uint32_t)atoi(getenv("TT_COOP_TESTVOID"))) {   /* (bot test) player 2 put far under the level, the catch-up held 8 s: a long fall, as after Weathertop's cutscene in a playtest */
                 uint32_t q; put = 1; void_t = coop_now() | 1; MEMF(a + 0xF0) = MEMF(p1 + 0xF0) + 250.0f; MEMF(a + 0xF8) = MEMF(p1 + 0xF8) - 200.0f; for (q = 0; q < 3; q++) MEM32(a + 0x90 + 4 * q) = MEM32(a + 0x130 + 4 * q) = MEM32(a + 0x140 + 4 * q) = MEM32(a + 0xF0 + 4 * q);
                 tt_dbg("[COOP2] test: player 2 put under the level at %.1f %.1f %.1f\n", MEMF(a + 0xF0), MEMF(a + 0xF4), MEMF(a + 0xF8)); } }
+            if (coop_goto_t && getenv("TT_COOP_P2GOTOHOLD") && coop_now() - coop_goto_t < (uint32_t)atoi(getenv("TT_COOP_P2GOTOHOLD"))) far_t = 0; else
             if (void_t && coop_now() - void_t < 8000u) far_t = 0; else
             if ((dx * dx + dy * dy > R * R && tt_coop_setting(3)) || MEMF(a + 0xF8) < MEMF(p1 + 0xF8) - 15.0f) {   /* (or 15 units under him: fallen off, a bot run at Weathertop) */
                 if (!far_t) far_t = coop_now() | 1;
@@ -8990,7 +9005,7 @@ void sub_0009C380(void)
         if (lv != coop_level_n) { lv = coop_level_n; done = 0; }
         if (v && !done && coop_p2_t0 && coop_p2 >= 0x10000u && coop_first_char >= 0x10000u && !coop_depth) { const char *c1 = strchr(v, ','), *c2 = c1 ? strchr(c1 + 1, ',') : NULL;
             if (c2 && coop_now() - coop_p2_t0 >= (uint32_t)atoi(c2 + 1)) { done = 1; MEMF(coop_p2 + 0xF0) = (float)atof(v); MEMF(coop_p2 + 0xF4) = (float)atof(c1 + 1); MEMF(coop_p2 + 0xF8) = MEMF(coop_first_char + 0xF8);
-                if (getenv("TT_COOP_P2GOTOZ")) MEMF(coop_p2 + 0xF8) = (float)atof(getenv("TT_COOP_P2GOTOZ"));
+                coop_goto_t = coop_now() | 1; if (getenv("TT_COOP_P2GOTOZ")) MEMF(coop_p2 + 0xF8) = (float)atof(getenv("TT_COOP_P2GOTOZ"));
                 { uint32_t q, bd = MEM32(coop_p2 + 0x494), xyz[3]; extern uint32_t tt_gcall(uint32_t va, uint32_t thisptr, int n, const uint32_t *args);   /* (all his places, as coop_place: the game took the next frame's from the others) */
                   for (q = 0; q < 3; q++) { xyz[q] = MEM32(coop_p2 + 0xF0 + 4 * q); MEM32(coop_p2 + 0x130 + 4 * q) = MEM32(coop_p2 + 0x140 + 4 * q) = MEM32(coop_p2 + 0x628 + 4 * q) = xyz[q]; if (bd >= 0x80000000u && bd < 0x84000000u) MEM32(bd + 0xE8 + 4 * q) = xyz[q]; }
                   tt_gcall(MEM32(MEM32(coop_p2) + 0x28u), coop_p2, 3, xyz); }
