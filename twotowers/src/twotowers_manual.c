@@ -4411,10 +4411,10 @@ static int vs_keep_enemy(uint32_t rec)
  * @SetEnemyID, @AttachToBone with its weapon, @SetAnimMachine, @SetBrainMachine, @AddToSpawnPool, all by name) is run
  * again for each copy with the lookup answering the copy, and a copy of the weapon of its own (coop_oc_weapon); its
  * spawner's pool then holds the copies too (up to 9). In play, inside a copy's own brain messages and events, a lookup of
- * the original or its weapon answers the copy. Levels: Gates of Moria (2), Balin's Tomb (3); TT_COOP_CLONELEVELS="2,11" others,
- * Balin's Tomb (3) too; TT_COOP_NOCLONES off, TT_COOP_CLONES copies each, TT_COOP_CLONEMAX all copies (80) */
+ * the original or its weapon answers the copy. Levels: Gates of Moria (2), Balin's Tomb (3), Amon Hen (4), the Plains of Rohan (6), Westfold (7); TT_COOP_CLONELEVELS="2,11" others,
+ * TT_COOP_NOCLONES off, TT_COOP_CLONES copies each, TT_COOP_CLONEMAX all copies (80) */
 #define COOP_NOC 160
-static struct { uint32_t orig, clone, worig, wclone; } coop_oc[COOP_NOC]; static int coop_noc;
+static struct { uint32_t orig, clone, worig, wclone; int follow, out; } coop_oc[COOP_NOC]; static int coop_noc;
 static uint32_t coop_oc_force, coop_oc_world; static int coop_oc_replaying, coop_oc_cur = -1, coop_oc_fi = -1;
 void coop_oc_reset(void) { coop_noc = 0; coop_oc_force = 0; coop_oc_cur = coop_oc_fi = -1; coop_oc_replaying = 0; }
 static int coop_mult_kind(uint32_t a);
@@ -4424,7 +4424,7 @@ static int coop_oc_level(void)
 {
     const char *e = getenv("TT_COOP_CLONELEVELS"); char b[16], l[128]; unsigned lv = MEM32(0x1BB2A4u);
     if (getenv("TT_COOP_NOCLONES") || !coop_mode() || tt_vs_on()) return 0;
-    if (!e) return lv == 2u || lv == 3u;   /* (Gates of Moria, Balin's Tomb) */
+    if (!e) return lv == 2u || lv == 3u || lv == 4u || lv == 6u || lv == 7u;   /* (Gates of Moria, Balin's Tomb, Amon Hen, the Plains of Rohan, Westfold) */
     snprintf(b, sizeof b, ",%u,", lv); snprintf(l, sizeof l, ",%s,", e); return strstr(l, b) != NULL;
 }
 static int coop_oc_find(uint32_t a) { int i; for (i = 0; i < coop_noc; i++) if (coop_oc[i].clone == a) return i; return -1; }
@@ -10723,6 +10723,7 @@ static void coop_a6480(void)
         if (coop_npool < 512) { coop_pool[coop_npool].spawner = sp; coop_pool[coop_npool].who = who; coop_pool[coop_npool].dead_t = 0; coop_pool[coop_npool].revived = 0; coop_pool[coop_npool].pend = 0; coop_pool[coop_npool].out = 0; coop_pool[coop_npool].sent = 0; coop_npool++; }
     }
 }
+static int coop_noc_hold(void) { extern int tt_in_scene(void); return !coop_p2_t0 || tt_in_scene(); }   /* (no copy comes or goes before play or in a cutscene) */
 static void coop_pool_frame(void);
 void coop_pool_frame_x(void) { coop_pool_frame(); }
 static void coop_pool_frame(void)
@@ -10732,8 +10733,32 @@ static void coop_pool_frame(void)
     if (coop_noc && coop_p2_t0 && oc_lv != coop_level_n) {   /* (once a level: a pool copy that never joined a pool is hidden and off, never left standing about) */
         int i, j, n = 0; oc_lv = coop_level_n;
         for (i = 0; i < coop_noc; i++) { for (j = 0; j < coop_npool && coop_pool[j].who != coop_oc[i].clone; j++) ;
-            if (j == coop_npool) { uint32_t c = coop_oc[i].clone; MEM32(c + 0x110) = (MEM32(c + 0x110) | 0x200000u) & ~0x1000u; n++; } }
+            coop_oc[i].follow = coop_oc[i].out = 0;
+            if (j == coop_npool) { uint32_t c = coop_oc[i].clone; int q; MEM32(c + 0x110) = (MEM32(c + 0x110) | 0x200000u) & ~0x1000u; n++;
+                for (q = 0; q < coop_npool && coop_pool[q].who != coop_oc[i].orig; q++) ;
+                coop_oc[i].follow = q == coop_npool && !getenv("TT_COOP_NOCLONEFOLLOW"); } }
         tt_dbg("[COOPCLONE] start of play: %d copies, %d in no pool (hidden)\n", coop_noc, n);
+    }
+    if (coop_noc && !coop_noc_hold()) {   /* a copy of an enemy no spawner holds (the Plains of Rohan, Westfold: the script places them by name, nothing to send out of a
+         * pool): it comes when its original does, beside it on the same ground and pathmap, through the game's SetPosition, and goes while the
+         * original is put away alive. TT_COOP_NOCLONEFOLLOW: left hidden */
+        extern uint32_t tt_gcall(uint32_t va, uint32_t thisptr, int n, const uint32_t *args); int i;
+        for (i = 0; i < coop_noc; i++) if (coop_oc[i].follow) {
+            uint32_t o = coop_oc[i].orig, c = coop_oc[i].clone, fo = MEM32(o + 0x110), one = 1, zero = 0; int on = (fo & 0x1000u) && !(fo & 0x200000u) && (int32_t)MEM32(o + 0x2FC) > 0;
+            if (!coop_oc[i].out && on) {
+                float an = (float)i * 2.4f, xyzf[3]; uint32_t xyz[3], bd = MEM32(c + 0x494), wc = coop_oc[i].wclone; int k2;
+                xyzf[0] = MEMF(o + 0xF0) + 2.0f * cosf(an); xyzf[1] = MEMF(o + 0xF4) + 2.0f * sinf(an); xyzf[2] = MEMF(o + 0xF8);
+                for (k2 = 0; k2 < 3; k2++) { memcpy(&xyz[k2], &xyzf[k2], 4); MEM32(c + 0xF0 + 4 * k2) = MEM32(c + 0x90 + 4 * k2) = MEM32(c + 0x130 + 4 * k2) = MEM32(c + 0x140 + 4 * k2) = MEM32(c + 0x628 + 4 * k2) = xyz[k2]; if (bd >= 0x80000000u && bd < 0x84000000u) MEM32(bd + 0xE8 + 4 * k2) = xyz[k2]; }
+                MEM32(c + 0x2EC) = MEM32(o + 0x2EC); MEM32(c + 0x110) &= ~0x200000u;
+                tt_gcall(MEM32(MEM32(c) + 0x28u), c, 3, xyz); tt_gcall(MEM32(MEM32(c) + 0x30u), c, 1, &one);
+                if (wc >= 0x10000u) tt_gcall(MEM32(MEM32(wc) + 0x30u), wc, 1, &one);
+                coop_oc[i].out = 1;
+                { static int nl; if (nl++ < 120) tt_dbg("[COOPCLONE] %08X comes with '%s' at %.1f %.1f %.1f (pathmap %d)\n", c, coop_nm(o), xyzf[0], xyzf[1], xyzf[2], (int)MEM32(c + 0x2EC)); }
+            } else if (coop_oc[i].out && !on && (int32_t)MEM32(o + 0x2FC) > 0 && (int32_t)MEM32(c + 0x2FC) > 0) {
+                tt_gcall(MEM32(MEM32(c) + 0x30u), c, 1, &zero); MEM32(c + 0x110) |= 0x200000u; coop_oc[i].out = 0;
+                { static int nl; if (nl++ < 60) tt_dbg("[COOPCLONE] %08X put away with '%s'\n", c, coop_nm(o)); }
+            }
+        }
     }
     if (!coop_npool || (m <= 1 && !getenv("TT_SPAWNLOG"))) return;
     for (k = 0; k < coop_npool; k++) {
