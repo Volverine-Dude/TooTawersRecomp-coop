@@ -4404,8 +4404,8 @@ static int vs_keep_enemy(uint32_t rec)
  * @SetEnemyID, @AttachToBone with its weapon, @SetAnimMachine, @SetBrainMachine, @AddToSpawnPool, all by name) is run
  * again for each copy with the lookup answering the copy, and a copy of the weapon of its own (coop_oc_weapon); its
  * spawner's pool then holds the copies too (up to 9). In play, inside a copy's own brain messages and events, a lookup of
- * the original or its weapon answers the copy. Levels: Gates of Moria (2); TT_COOP_CLONELEVELS="2,11" others,
- * TT_COOP_NOCLONES off, TT_COOP_CLONES copies each, TT_COOP_CLONEMAX all copies (80) */
+ * the original or its weapon answers the copy. Levels: Gates of Moria (2), Balin's Tomb (3); TT_COOP_CLONELEVELS="2,11" others,
+ * Balin's Tomb (3) too; TT_COOP_NOCLONES off, TT_COOP_CLONES copies each, TT_COOP_CLONEMAX all copies (80) */
 #define COOP_NOC 160
 static struct { uint32_t orig, clone, worig, wclone; } coop_oc[COOP_NOC]; static int coop_noc;
 static uint32_t coop_oc_force, coop_oc_world; static int coop_oc_replaying, coop_oc_cur = -1, coop_oc_fi = -1;
@@ -4417,7 +4417,7 @@ static int coop_oc_level(void)
 {
     const char *e = getenv("TT_COOP_CLONELEVELS"); char b[16], l[128]; unsigned lv = MEM32(0x1BB2A4u);
     if (getenv("TT_COOP_NOCLONES") || !coop_mode() || tt_vs_on()) return 0;
-    if (!e) return lv == 2u;
+    if (!e) return lv == 2u || lv == 3u;   /* (Gates of Moria, Balin's Tomb) */
     snprintf(b, sizeof b, ",%u,", lv); snprintf(l, sizeof l, ",%s,", e); return strstr(l, b) != NULL;
 }
 static int coop_oc_find(uint32_t a) { int i; for (i = 0; i < coop_noc; i++) if (coop_oc[i].clone == a) return i; return -1; }
@@ -10172,6 +10172,7 @@ static void coop_own_machines(void)   /* each frame (coop_place): once a level *
     }
 }
 static uint32_t coop_pool_count(uint32_t sp);
+static uint32_t coop_oc_svvm, coop_oc_svh[8], coop_oc_svs[16]; static int coop_oc_svn;   /* (@AddToSpawnPool's arguments as the script gave them) */
 /* a set-up command the level gave an enemy with pool copies: run again for each copy (coop_oc), set-up only */
 static void coop_oc_after(uint32_t fn, void (*call)(void), uint32_t vm, unsigned lk0)
 {
@@ -10189,6 +10190,7 @@ static void coop_oc_after(uint32_t fn, void (*call)(void), uint32_t vm, unsigned
             uint32_t c = coop_oc[i].clone; MEM32(c + 0x110) = (MEM32(c + 0x110) | 0x200000u) & ~0x1000u;
             tt_dbg("[COOPCLONE] %08X: spawner %08X '%s' full, the copy left out (hidden)\n", c, sp0, coop_nm(sp0)); continue; }
         if (wo && fn == 0x000A0DB0u && !coop_oc[i].wclone) { coop_oc[i].worig = wo; coop_oc[i].wclone = coop_oc_weapon(wo, i); }
+        if (coop_oc_svvm == vm) { uint32_t k2, b2; for (k2 = 0; k2 < 8; k2++) MEM32(vm + k2 * 4u) = coop_oc_svh[k2]; b2 = MEM32(vm + 0x10); for (k2 = 0; k2 < (uint32_t)coop_oc_svn; k2++) MEM32(b2 + k2 * 4u) = coop_oc_svs[k2]; }   /* (@AddToSpawnPool takes its arguments up: they are put back for each copy, or the copy was never pooled and stood about the level, a playtest) */
         coop_oc_fi = i; coop_oc_replaying = 1;
         PUSH32(esp, vm); PUSH32(esp, fn); call(); esp += 4;   /* cdecl (vm) */
         coop_oc_replaying = 0; coop_oc_fi = -1;
@@ -10591,9 +10593,13 @@ extern void sub_000ADFC0_gen(void); void sub_000ADFC0(void) { uint32_t ctx = MEM
 static void coop_a6480(void);
 extern void sub_000A6480_gen(void); void sub_000A6480(void)
 {
-    uint32_t vm = MEM32(esp + 4); unsigned n0 = coop_lkn;
+    uint32_t vm = MEM32(esp + 4), b = vm >= 0x10000u && vm < 0x84000000u ? MEM32(vm + 0x10) : 0; unsigned n0 = coop_lkn, q;
+    int ns = b >= 0x10000u && b < 0x84000000u ? (int)((MEM32(vm) - b) / 4u) : 0;
+    if (ns < 0 || ns > 16) ns = 0;
+    if (ns) { coop_oc_svvm = vm; for (q = 0; q < 8; q++) coop_oc_svh[q] = MEM32(vm + q * 4u); for (q = 0; q < (unsigned)ns; q++) coop_oc_svs[q] = MEM32(b + q * 4u); coop_oc_svn = ns; } else coop_oc_svvm = 0;
     coop_a6480();
     if (coop_noc && !coop_oc_replaying) coop_oc_after(0x000A6480u, coop_a6480, vm, n0);   /* (the pool copies: coop_oc) */
+    coop_oc_svvm = 0;
 }
 static uint32_t coop_pool_count(uint32_t sp) { uint32_t n = 0; int k; for (k = 0; k < coop_npool; k++) if (coop_pool[k].spawner == sp) n++; return n; }
 static void coop_a6480(void)
@@ -10614,7 +10620,13 @@ void coop_pool_frame_x(void) { coop_pool_frame(); }
 static void coop_pool_frame(void)
 {
     int k, m = coop_enemy_mult(); uint32_t now = coop_now();
-    static uint32_t lt;
+    static uint32_t lt; static unsigned oc_lv = ~0u;
+    if (coop_noc && coop_p2_t0 && oc_lv != coop_level_n) {   /* (once a level: a pool copy that never joined a pool is hidden and off, never left standing about) */
+        int i, j, n = 0; oc_lv = coop_level_n;
+        for (i = 0; i < coop_noc; i++) { for (j = 0; j < coop_npool && coop_pool[j].who != coop_oc[i].clone; j++) ;
+            if (j == coop_npool) { uint32_t c = coop_oc[i].clone; MEM32(c + 0x110) = (MEM32(c + 0x110) | 0x200000u) & ~0x1000u; n++; } }
+        tt_dbg("[COOPCLONE] start of play: %d copies, %d in no pool (hidden)\n", coop_noc, n);
+    }
     if (!coop_npool || (m <= 1 && !getenv("TT_SPAWNLOG"))) return;
     for (k = 0; k < coop_npool; k++) {
         uint32_t a = coop_pool[k].who; int32_t hp;
