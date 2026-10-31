@@ -2771,10 +2771,10 @@ static uint32_t coop_respawn_wait(void)
     return w[d >= 0 && d < 3 ? d : d == 3 ? 2 : 1];
 }
 /* the difficulty's enemy damage and players' health (on top of the solo game's): easy 0.75x / 1.5x, medium 1x / 1x,
- * hard 1.5x / 0.75x. TT_COOP_DMGSCALE / TT_COOP_HPSCALE set one for a test run */
+ * hard 1.75x / 0.75x (1.5x until a playtest: human players are the better for it). TT_COOP_DMGSCALE / TT_COOP_HPSCALE set one for a test run */
 static float coop_dmg_scale(void)
 {
-    static const float f[3] = { 0.75f, 1.0f, 1.5f };
+    static const float f[3] = { 0.75f, 1.0f, 1.75f };
     int d = tt_coop_setting(0);
     if (getenv("TT_COOP_DMGSCALE")) return (float)atof(getenv("TT_COOP_DMGSCALE"));
     return f[d >= 0 && d < 3 ? d : d == 3 ? 2 : 1];
@@ -4822,6 +4822,22 @@ static void coop_place(void)
             tt_dbg("[COOPWAKE] player %d frozen %.1f from the other: every sector for a moment (+110 %08X, array %08X flag %u)\n", fz2 ? 2 : 1, sqrtf(dx * dx + dy * dy), fz2 ? f2 : f1, sv_arr, sv_flag);
         }
     }
+    { extern void coop_potions_frame(void); coop_potions_frame(); }
+    if (coop_mode() == 3 && !tt_vs_on() && tt_coop_setting(0) >= 2 && !getenv("TT_COOP_NOBOSSHP")) {
+        /* co-op Expert: the Watcher and Lurtz a third harder to fell. A third of the health more, in effect: a quarter of each blow's damage
+         * given back, so their bars and the scripts' phases by health stay as they are (the Watcher: 35 a blow, 7 blows, now 26, 9) */
+        extern int coop_is_lurtz(uint32_t e); static struct { uint32_t e; int32_t hp, carry; } bh[4]; static unsigned blv = ~0u; int i, j;
+        if (blv != coop_level_n) { blv = coop_level_n; memset(bh, 0, sizeof bh); }
+        for (i = 0; i < coop_nchars && i < COOP_MAXCHARS; i++) { uint32_t e = coop_chars[i]; int32_t hp;
+            if (e < 0x10000u || e >= 0x84000000u || MEM32(e) != 0x1741C0u || (coop_boss_kind(e) != 2 && !coop_is_lurtz(e))) continue;
+            for (j = 0; j < 4 && bh[j].e && bh[j].e != e; j++) ;
+            if (j == 4) continue;
+            hp = (int32_t)MEM32(e + 0x2FC);
+            if (!bh[j].e) { bh[j].e = e; bh[j].hp = hp; continue; }
+            if (getenv("TT_COOP_TESTBOSSHIT") && coop_p2_t0) { static uint32_t lt; if (coop_now() - lt > 2000u && hp > 35) { lt = coop_now(); hp -= 35; MEM32(e + 0x2FC) = (uint32_t)hp; } }   /* (bot test) a blow of 35 each 2 s */
+            if (hp < bh[j].hp && hp > 0) { int32_t back; bh[j].carry += bh[j].hp - hp; back = bh[j].carry / 4; bh[j].carry %= 4; { static int n; if (n++ < 40) tt_dbg("[COOPBOSS] %s: blow %d, %d given back (health %d)\n", coop_nm(e), bh[j].hp - hp, back, hp + back); } hp += back; MEM32(e + 0x2FC) = (uint32_t)hp; }
+            bh[j].hp = hp; }
+    }
     coop_pm_probe(p1); coop_pm_log(p1); coop_trail_frame(p1); coop_steps_frame(p1); { extern void coop_own_machines_x(void); coop_own_machines_x(); } { extern void coop_pdmg_frame_x(void); coop_pdmg_frame_x(); }
     if (getenv("TT_COOP_AIMSTATE") && p1 >= 0x10000u && a >= 0x10000u) {   /* (research) each hero's state, lock and pad record, 4 times a second */
         static uint32_t lt; if (coop_now() - lt >= 250u) { int w, j; lt = coop_now();
@@ -6246,6 +6262,31 @@ static uint32_t vs_pk_spawn(float x, float y, float z, int kind)
     if (getenv("TT_VS_PICKLOG")) { char b[600]; int q = 0, k; for (k = 0; k < 14; k++) q += snprintf(b + q, sizeof b - q, " [%d] %08X %08X %08X %08X", k, MEM32(0x43ADCCu + 4 * k), MEM32(0x43AE04u + 4 * k), MEM32(0x43AD94u + 4 * k), MEM32(0x43AE3Cu + 4 * k)); tt_dbg("[VSPICK] tables:%s\n", b); }
     { static int n; if (n++ < 30) tt_dbg("[VS] pickup %08X of kind %d out at %.1f %.1f %.1f (flags %08X, +110 %08X)\n", o, kind, x, y, z, MEM32(o + 0x3F8), MEM32(o + 0x110)); }
     return o;
+}
+/* co-op Expert: the level's own full health potions, which do not come through 0x8F410 as drops do (sub_0008F410): made again as the small
+ * one, once a level at the start of play, in their place and for good (a drop's life set aside, as vs_pk_spawn) */
+void coop_potions_frame(void)
+{
+    extern int tt_coop_setting(int i); extern uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment);
+    static unsigned lv = ~0u; int i, n = 0, t = 0; uint32_t sp = esp, r0 = eax, r1 = ecx, r2 = edx;
+    if (lv == coop_level_n || !coop_p2_t0 || coop_mode() != 3 || tt_vs_on() || tt_coop_setting(0) < 2 || getenv("TT_COOP_KEEPPOTIONS")) return;
+    lv = coop_level_n;
+    if (vs_pk_level != coop_level_n || (!vs_pk_mem && !(vs_pk_mem = xbox_ContiguousAlloc(64u, 16u)))) return;
+    for (i = 0; i < vs_npk; i++) { uint32_t o = vs_pk[i], k, fl; float x, y, z;
+        if (MEM32(o) != 0x1748B0u || !strncmp((const char *)XBOX_PTR(vs_pk_rec[i] + 8), "dynamicPickupObj", 16)) continue;
+        t++; k = MEM32(o + 0x3D0); fl = MEM32(o + 0x3F8);
+        tt_dbg("[COOPPOTION] level pickup %08X \"%.20s\" kind %u flags %08X at %.1f %.1f %.1f\n", o, (const char *)XBOX_PTR(vs_pk_rec[i] + 8), k, fl, MEMF(o + 0xF0), MEMF(o + 0xF4), MEMF(o + 0xF8));
+        if ((k != 1u && k != 5u) || (fl & 2u)) continue;
+        x = MEMF(o + 0xF0); y = MEMF(o + 0xF4); z = MEMF(o + 0xF8);
+        if (fl) { ecx = o; PUSH32(esp, 0x0008F700u); sub_0008F700(); MEM32(o + 0x3F8) = 0; esp = sp; }
+        MEMF(vs_pk_mem) = x; MEMF(vs_pk_mem + 4) = y; MEMF(vs_pk_mem + 8) = z; MEMF(vs_pk_mem + 12) = 1.0f;
+        MEMF(vs_pk_mem + 16) = 0; MEMF(vs_pk_mem + 20) = 0; MEMF(vs_pk_mem + 24) = 0; MEMF(vs_pk_mem + 28) = 1.0f;
+        PUSH32(esp, 0u); PUSH32(esp, vs_pk_mem + 16); PUSH32(esp, vs_pk_mem); PUSH32(esp, 0x0008F410u); ecx = o; sub_0008F410(); esp = sp;
+        MEMF(o + 0xF0) = x; MEMF(o + 0xF4) = y; MEMF(o + 0xF8) = z;
+        MEM32(o + 0x3F8) = 0; ecx = o; PUSH32(esp, 0x0008F640u); sub_0008F640(); esp = sp;
+        MEMF(o + 0x430) = 1.0e7f; MEMF(o + 0x434) = 1.0e7f; n++; }
+    esp = sp; eax = r0; ecx = r1; edx = r2;
+    tt_dbg("[COOPPOTION] start of play: %d pickups of the level, %d full ones made small\n", t, n);
 }
 /* taking them: the dynamic pickups' own touch never comes for the heroes here, so a hero within 1.4 units of one that
  * shows (+0x3F8 bit 1) takes it: kinds 0-3 health (a third of his most), 4-6 ammo (5, up to 10); first come, first
@@ -11967,6 +12008,16 @@ static int coop_diff_swap(void)
     { int solo = MEM8(0x4AB69Cu); static unsigned lv = ~0u; MEM8(0x4AB69Cu) = (uint8_t)(d < 0 ? 1 : d > 2 ? 2 : d);
       if (lv != coop_level_n) { lv = coop_level_n; tt_dbg("[COOPDIFF] the game asks its difficulty: the co-op's %d (the solo game's %d kept)\n", d, solo); }
       return solo; }
+}
+/* co-op Expert: a full health potion (pickup kind 1, or 5 its like) is the small one (0; 0x8F960: a quarter of his most health), its model
+ * and refill with it: every pickup, the level's and the drops, is set up here. TT_COOP_KEEPPOTIONS: as the game */
+extern void sub_0008F410_gen(void);
+void sub_0008F410(void)
+{
+    uint32_t k = MEM32(esp + 0xC);
+    if ((k == 1u || k == 5u) && coop_mode() == 3 && !tt_vs_on() && tt_coop_setting(0) >= 2 && !getenv("TT_COOP_KEEPPOTIONS")) {
+        MEM32(esp + 0xC) = 0u; { static int n; if (n++ < 40) tt_dbg("[COOPPOTION] pickup %08X: kind %u -> 0\n", ecx, k); } }
+    sub_0008F410_gen();
 }
 extern void sub_000D23A0_gen(void); void sub_000D23A0(void) { int s = coop_diff_swap(); sub_000D23A0_gen(); if (s >= 0) MEM8(0x4AB69Cu) = (uint8_t)s; }
 extern void sub_000D23B0_gen(void); void sub_000D23B0(void) { int s = coop_diff_swap(); sub_000D23B0_gen(); if (s >= 0) MEM8(0x4AB69Cu) = (uint8_t)s; }
