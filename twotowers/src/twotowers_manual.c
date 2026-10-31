@@ -5336,10 +5336,11 @@ void sub_00099D40(void)
     sub_00099D40_gen();
     a1 = coop_rec_addr ? MEMF(coop_rec_addr + 0x90) : 0;
     if (mine) coop_exp_moved[1] += (unsigned)(a1 - b1 + 0.5f);
-    if (coop_mode() == 3 && coop_rec_addr && ra == 0x00085711u) {   /* each kill's award and what made it (0x99CA0: enemy's experience x meter x 0.01, 2.0 in Perfect, x the level's xp_mult) */
-        uint32_t lv = MEM32(0x1BB2A4u); static uint32_t lvs = ~0u;
-        if (lv != lvs) { int k; lvs = lv; tt_dbg("[COOPAWARD] level %u xp_mult:", lv); for (k = 0; k < 15; k++) tt_dbg(" %.2f", MEMF(0x1B1128u + (uint32_t)k * 4u)); tt_dbg("\n"); }
-        tt_dbg("[COOPAWARD] player %d's kill of %08X '%s': +%.0f (meter %.2f, Perfect left %.2f, xp_mult %.2f)\n", mine ? 2 : 1, en, coop_nm(en), a1 - b1, MEMF(coop_rec_addr + 4), MEMF(coop_rec_addr + 0x5C), lv < 15u ? MEMF(0x1B1128u + lv * 4u) : 0.0f);
+    if (ra == 0x00085711u) {   /* each kill's award and what made it, co-op or solo (0x99CA0: enemy's experience x meter x 0.01, 2.0 in Perfect, x the level's xp_mult) */
+        uint32_t lv = MEM32(0x1BB2A4u), ar = coop_rec_addr; static uint32_t lvs = ~0u;
+        if (!ar) ar = coop_hero_rec();
+        if (lv != lvs) { int k; lvs = lv; tt_dbg("[COOPAWARD] level %u (mode %d) xp_mult:", lv, coop_mode()); for (k = 0; k < 15; k++) tt_dbg(" %.2f", MEMF(0x1B1128u + (uint32_t)k * 4u)); tt_dbg("\n"); }
+        tt_dbg("[COOPAWARD] mode %d player %d's kill of %08X '%s': now %.0f (meter %.2f, Perfect left %.2f, xp_mult %.2f)\n", coop_mode(), mine ? 2 : 1, en, coop_nm(en), MEMF(ar + 0x90), MEMF(ar + 4), MEMF(ar + 0x5C), lv < 15u ? MEMF(0x1B1128u + lv * 4u) : 0.0f);
     }
     if (sw) tt_coop_leave();
     {   /* Lurtz: player 2's hits on him count as player 1's (coop_is_lurtz), so the game's award is player 1's; if player 2 hit him in
